@@ -10,9 +10,8 @@ A Claude Code plugin that runs **external coding-agent CLIs** — `agy` and `cod
 Hand a task to one external agent or fan one prompt out to all of them in parallel, then
 collect every response inline.
 
-It generalises this repo's sibling **council** (`council/run-council.sh`), which drives the
-same CLIs as a fixed, *read-only* evaluation panel, into a *delegation* tool: an arbitrary
-task, your choice of agent, and **read-write by default** so the agents can actually do work.
+It is a *delegation* tool: an arbitrary task, your choice of agent, and **read-write by
+default** so the agents can actually do work (use `--read-only` for analysis-only runs).
 
 ## What it drives
 
