@@ -77,7 +77,7 @@ Write a clear, self-contained instruction for the sub-agent (it does not share y
 context). Pass it on **stdin** via `--prompt-file -` so multi-line prompts need no quoting:
 
 ```bash
-bash "${CLAUDE_PLUGIN_ROOT:-/opt/lxl/claude/external-agents}/scripts/run-agent.sh" \
+bash "${CLAUDE_PLUGIN_ROOT}/scripts/run-agent.sh" \
   --agent codex --target "$PWD" --prompt-file - <<'PROMPT'
 <the full task for the external agent>
 PROMPT
@@ -85,14 +85,14 @@ PROMPT
 
 - Read-only review fanned out to every agent:
   ```bash
-  bash "${CLAUDE_PLUGIN_ROOT:-/opt/lxl/claude/external-agents}/scripts/run-agent.sh" \
+  bash "${CLAUDE_PLUGIN_ROOT}/scripts/run-agent.sh" \
     --agent all --read-only --target "$PWD" --prompt-file - <<'PROMPT'
   Review the changes on the current branch for correctness and security. Cite file:line.
   PROMPT
   ```
 - Single write task with a model/effort override:
   ```bash
-  bash "${CLAUDE_PLUGIN_ROOT:-/opt/lxl/claude/external-agents}/scripts/run-agent.sh" \
+  bash "${CLAUDE_PLUGIN_ROOT}/scripts/run-agent.sh" \
     --agent agy --model "Gemini 3.1 Pro (High)" --target "$PWD" --prompt-file - <<'PROMPT'
   Implement <X>. Run the tests when done.
   PROMPT

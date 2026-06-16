@@ -37,9 +37,8 @@ Two CLI caveats worth knowing:
 
 ## Install
 
-This plugin lives at `/opt/lxl/claude/external-agents`. Load it into Claude Code as a
-local plugin (e.g. `/plugin` → add a local directory pointing here), or symlink it into
-your plugins directory. Once loaded you get:
+Load this directory into Claude Code as a local plugin (e.g. `/plugin` → add a local
+directory pointing here), or symlink it into your plugins directory. Once loaded you get:
 
 - the **`external-agents`** skill — triggers on natural language ("ask codex to …",
   "have the external agents review …", "delegate this to agy");
