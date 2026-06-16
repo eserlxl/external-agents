@@ -3,7 +3,7 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 #
 # Bump the external-agents plugin version in lockstep across the plugin
-# manifest, skill frontmatter, and CHANGELOG.md.
+# manifest, skill frontmatter, the README version badge, and CHANGELOG.md.
 #
 # This script updates version numbers and the changelog — it does NOT create a
 # git tag or GitHub release. Tags should only be created at release milestones:
@@ -24,6 +24,7 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 PLUGIN_JSON="$ROOT/.claude-plugin/plugin.json"
 CODEX_PLUGIN_JSON="$ROOT/.codex-plugin/plugin.json"
 CHANGELOG="$ROOT/CHANGELOG.md"
+README="$ROOT/README.md"
 
 # Portable repo-relative path. GNU realpath's relative mode is unavailable on
 # stock macOS without Homebrew; python3 is already required by this script.
@@ -59,10 +60,14 @@ done
 # with the manifest already bumped — exactly the version drift the lockstep contract
 # forbids. Decode-check every text file we will read before any write; a failure
 # aborts with the tree untouched.
-python3 - "$ROOT" "$CHANGELOG" <<'PY' || exit 1
+python3 - "$ROOT" "$CHANGELOG" "$README" <<'PY' || exit 1
 import glob, os, sys
-root, changelog = sys.argv[1], sys.argv[2]
-for path in [changelog] + sorted(glob.glob(os.path.join(root, "skills", "*", "SKILL.md"))):
+root, changelog, readme = sys.argv[1], sys.argv[2], sys.argv[3]
+targets = [changelog]
+if os.path.isfile(readme):
+    targets.append(readme)
+targets += sorted(glob.glob(os.path.join(root, "skills", "*", "SKILL.md")))
+for path in targets:
     try:
         with open(path, encoding="utf-8") as fh:
             fh.read()
@@ -123,6 +128,7 @@ DATE="$(date -u +%Y-%m-%d)"
 if [ -z "$DRY_RUN" ]; then
   _bump_targets=("$PLUGIN_JSON" "$CHANGELOG")
   [ -f "$CODEX_PLUGIN_JSON" ] && _bump_targets+=("$CODEX_PLUGIN_JSON")
+  [ -f "$README" ] && _bump_targets+=("$README")
   for _skill in "$ROOT"/skills/*/SKILL.md; do
     [ -f "$_skill" ] && _bump_targets+=("$_skill")
   done
@@ -230,6 +236,59 @@ PY
   fi
 done
 
+# --- Sync the README version badge ----------------------------------------
+# Best-effort: rewrite the shields.io static version badge
+# (.../badge/version-<v>-informational) so the README always advertises the
+# current version. Skipped (with a warning) if the README or the badge is
+# absent. Dashes/underscores/spaces in the version are shields-escaped.
+README_SYNCED=""
+if [ -f "$README" ]; then
+  if [ -n "$DRY_RUN" ]; then
+    has_badge="$(python3 -c "import re,sys;t=open(sys.argv[1]).read();print('1' if re.search(r'img\.shields\.io/badge/version-.*?-informational', t) else '0')" "$README")"
+    if [ "$has_badge" = "1" ]; then README_SYNCED="$(relpath "$README")"; else echo "warning: no shields version badge in $(relpath "$README"); skipped" >&2; fi
+  else
+    changed="$(python3 - "$README" "$NEW" <<'PY'
+import os, re, sys, tempfile
+path, new = sys.argv[1], sys.argv[2]
+
+def atomic_write(path, data):
+    # Same-directory temp + os.replace (see the JSON-manifest step above): never
+    # truncate-then-write, so an interruption cannot leave a half-written README.
+    d = os.path.dirname(path) or "."
+    fd, tmp = tempfile.mkstemp(dir=d, prefix=".bump-", suffix=".tmp")
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as fh:
+            fh.write(data)
+        os.replace(tmp, path)
+    except BaseException:
+        try:
+            os.remove(tmp)
+        except OSError:
+            pass
+        raise
+
+# shields.io escapes '_'->'__', '-'->'--', ' '->'_' in the badge message.
+msg = new.replace("_", "__").replace("-", "--").replace(" ", "_")
+with open(path) as f:
+    text = f.read()
+# Replace the message segment between 'version-' and '-informational' on the badge URL.
+text, n = re.subn(
+    r'(img\.shields\.io/badge/version-).*?(-informational)',
+    lambda m: m.group(1) + msg + m.group(2),
+    text, count=1)
+if n:
+    atomic_write(path, text)
+print(n)
+PY
+)"
+    if [ "$changed" = "0" ]; then
+      echo "warning: no shields version badge in $(relpath "$README"); skipped" >&2
+    else
+      README_SYNCED="$(relpath "$README")"
+    fi
+  fi
+fi
+
 # --- Prepend a CHANGELOG entry --------------------------------------------
 if [ -z "$DRY_RUN" ]; then
 python3 - "$CHANGELOG" "$NEW" "$DATE" "$NOTE" <<'PY'
@@ -284,11 +343,13 @@ if [ -n "$DRY_RUN" ]; then
   # test would otherwise become the script's exit status, making --dry-run exit 1 whenever no
   # skill is syncable — while the real run exits 0. Keep the probe's exit code trustworthy.
   if [ -n "$SKILLS_SYNCED" ]; then echo "  would sync$SKILLS_SYNCED"; fi
+  if [ -n "$README_SYNCED" ]; then echo "  would update README badge ($README_SYNCED)"; fi
 else
   echo "Bumped: $CURRENT -> $NEW"
   echo "  updated $(relpath "$PLUGIN_JSON")"
   [ -f "$CODEX_PLUGIN_JSON" ] && echo "  updated $(relpath "$CODEX_PLUGIN_JSON")"
   [ -n "$SKILLS_SYNCED" ] && echo "  updated$SKILLS_SYNCED"
+  [ -n "$README_SYNCED" ] && echo "  updated $README_SYNCED (version badge)"
   echo "  changelog entry added ($DATE)"
   echo
   echo "Next: review the diff, commit, then refresh/reinstall in the host you are testing."
