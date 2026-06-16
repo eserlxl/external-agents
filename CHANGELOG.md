@@ -4,6 +4,11 @@ All notable changes to external-agents are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/),
 and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [0.2.0] - 2026-06-16
+
+### Added
+- `scripts/bump-version.sh` — lockstep version bumper across the plugin manifest, skill frontmatter, and CHANGELOG.md (Keep a Changelog).
+
 ## [0.1.0] - 2026-06-16
 
 ### Added
