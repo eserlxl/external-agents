@@ -1,0 +1,7 @@
+# Claude Code session state (not part of the plugin)
+.remember/
+
+# OS / editor cruft
+.DS_Store
+*.swp
+*~
