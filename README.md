@@ -2,7 +2,7 @@
 
 [![Claude Code plugin](https://img.shields.io/badge/Claude%20Code-plugin-8A2BE2.svg)](https://docs.claude.com/en/docs/claude-code/overview)
 [![Run external CLIs as sub-agents](https://img.shields.io/badge/dispatch-agy%20%C2%B7%20codex%20%C2%B7%20claude-0A7BBB.svg)](#what-it-drives)
-[![version](https://img.shields.io/badge/version-0.2.0-informational.svg)](.claude-plugin/plugin.json)
+[![version](https://img.shields.io/badge/version-0.3.0-informational.svg)](.claude-plugin/plugin.json)
 [![License: GPL-3.0-or-later](https://img.shields.io/badge/license-GPL--3.0--or--later-blue.svg)](LICENSE)
 
 A Claude Code plugin that runs **external coding-agent CLIs** — `agy` and `codex`

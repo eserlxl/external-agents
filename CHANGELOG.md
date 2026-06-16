@@ -4,6 +4,11 @@ All notable changes to external-agents are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/),
 and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [0.3.0] - 2026-06-16
+
+### Changed
+- scripts/bump-version.sh now also syncs the README shields.io version badge, so the README always advertises the current version.
+
 ## [0.2.0] - 2026-06-16
 
 ### Added
