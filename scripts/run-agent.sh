@@ -416,6 +416,13 @@ fi
 [ -n "$AGENT" ] || { echo "run-agent: --agent is required (agy|codex|claude|cursor|all)" >&2; exit 2; }
 [ -d "$TARGET" ] || { echo "run-agent: --target '$TARGET' is not a directory" >&2; exit 2; }
 
+# A non-numeric or zero --timeout would otherwise defer to an opaque per-agent
+# `timeout` failure at launch; reject it once, up front, with a clear message.
+case "$TIMEOUT" in
+  ''|*[!0-9]*) echo "run-agent: --timeout must be a positive integer of seconds (got '$TIMEOUT')" >&2; exit 2;;
+esac
+[ "$TIMEOUT" -gt 0 ] || { echo "run-agent: --timeout must be a positive integer of seconds (got '$TIMEOUT')" >&2; exit 2; }
+
 # The requested effort level is a model TIER. Blank --effort -> config default_tier.
 TIER="${EFFORT:-$DEFAULT_TIER}"
 # Validate only a USER-supplied --effort (to catch typos). A stale default_tier never
