@@ -253,6 +253,21 @@ assert_contains "bump minor from 2.0.0-rc.1 -> 2.1.0" \
   "$(ALLOW_DIRTY=1 bash "$prf/scripts/bump-version.sh" minor --dry-run 2>/dev/null)" "-> 2.1.0"
 rm -rf "$prf"
 
+echo "== bump-version.sh aborts on non-UTF-8 (no partial bump) =="
+# The strict-UTF-8 preflight must abort BEFORE the manifest is rewritten, so one bad
+# byte can never leave version drift across files.
+uft="$(mktemp -d)"
+mkdir -p "$uft/scripts" "$uft/.claude-plugin"
+cp "$ROOT/scripts/bump-version.sh" "$uft/scripts/"
+printf '%s\n' '{"name":"external-agents","version":"1.0.0"}' >"$uft/.claude-plugin/plugin.json"
+printf 'changelog \xff bad byte\n' >"$uft/CHANGELOG.md"   # invalid UTF-8 byte
+uft_err="$(ALLOW_DIRTY=1 bash "$uft/scripts/bump-version.sh" patch 2>&1 >/dev/null)"; uft_rc=$?
+assert_exit     "non-UTF-8 target aborts the bump (exit 1)" 1 "$uft_rc"
+assert_contains "non-UTF-8 abort is explained"             "$uft_err" "not valid UTF-8"
+uft_ver="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["version"])' "$uft/.claude-plugin/plugin.json" 2>/dev/null)"
+assert_contains "plugin.json version unchanged after abort" "$uft_ver" "1.0.0"
+rm -rf "$uft"
+
 echo "== shellcheck (regression guard) =="
 if command -v shellcheck >/dev/null 2>&1; then
   if shellcheck "$ROOT/scripts/run-agent.sh" "$ROOT/scripts/bump-version.sh" >/dev/null 2>&1; then
