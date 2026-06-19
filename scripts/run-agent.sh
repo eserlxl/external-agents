@@ -601,9 +601,29 @@ redact() {
     -e 's#[A-Za-z0-9+/]{40,}={0,2}#<REDACTED>#g'
 }
 
+# format_masked_argv — render the current ARGV[] (built by build_argv) as a single line
+# with the prompt token at PROMPT_IDX shown as <PROMPT> and any space-bearing token
+# single-quoted. BOTH the --dry-run printer and run_one's launch record call this, so a
+# recorded live argv is byte-identical to the --dry-run argv by construction — and the
+# record never contains the prompt text (secret/PII safe).
+format_masked_argv() {
+  local i tok line=""
+  for i in "${!ARGV[@]}"; do
+    tok="${ARGV[$i]}"
+    if [ "$i" = "$PROMPT_IDX" ]; then tok="<PROMPT>"
+    else case "$tok" in *[[:space:]]*) tok="'$tok'";; esac
+    fi
+    line="$line $tok"
+  done
+  printf '%s' "${line# }"
+}
+
 run_one() {  # agent  (cwd=TARGET) — stdout->$OUT/<a>.md (redacted), stderr->.err, rc/.sec
   local a="$1" t0 t1 rc
   build_argv "$a" || return 1
+  # Record the resolved launch argv with the prompt masked — identical to --dry-run — so a
+  # live run's exact argv can be verified without ever persisting the prompt text.
+  format_masked_argv >"$OUT/$a.argv"
   t0=$(date +%s 2>/dev/null || echo 0)
   # Pipe stdout through redact so a secret-shaped token never persists to disk or echo;
   # rc is the agent's (PIPESTATUS[0]), not redact's.
@@ -618,15 +638,7 @@ if [ "$DRYRUN" = "1" ]; then
   echo "external-agents dry-run  (mode=$MODE  tier=${TIER:-(none)}  target=$TARGET)"
   for a in "${RUN[@]}"; do
     build_argv "$a" || continue
-    line=""
-    for i in "${!ARGV[@]}"; do
-      tok="${ARGV[$i]}"
-      if [ "$i" = "$PROMPT_IDX" ]; then tok="<PROMPT>"
-      else case "$tok" in *[[:space:]]*) tok="'$tok'";; esac
-      fi
-      line="$line $tok"
-    done
-    printf '  %-7s %s\n' "$a" "${line# }"
+    printf '  %-7s %s\n' "$a" "$(format_masked_argv)"
   done
   exit 0
 fi

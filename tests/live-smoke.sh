@@ -35,6 +35,15 @@ echo "external-agents live smoke: armed (EXTERNAL_AGENTS_LIVE=1)"
 # Discovery is the driver's machine-readable --discover surface (same agent_bin /
 # command -v probe as --check), so the harness never re-implements detection. Absence
 # is NEVER a failure: an environment with no agent CLIs on PATH still exits 0.
+# live_argv_record OUTDIR AGENT — print the masked launch-argv record run_one writes for
+# AGENT under OUTDIR ($OUTDIR/<agent>.argv): the resolved argv with the prompt shown as
+# <PROMPT>, secret/PII-free. The argv-equivalence check (next sub-phase) compares this
+# against the agent's --dry-run argv to prove the live launch argv is correct.
+# shellcheck disable=SC2329  # consumption seam — invoked by the argv-equivalence routine
+live_argv_record() {
+  cat "$1/$2.argv" 2>/dev/null
+}
+
 discovered="$("$RUN" --discover 2>/dev/null)"
 reachable=()
 while read -r a state _; do

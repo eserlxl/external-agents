@@ -360,6 +360,31 @@ else
   printf '  skip post-write verification test (timeout unavailable)\n'
 fi
 
+echo "== live argv record == masked --dry-run argv (stub agent, real launch path) =="
+# run_one writes $OUT/<a>.argv (the launch argv with the prompt masked) before launching.
+# The live harness compares that record against the --dry-run argv to prove the live launch
+# argv is correct; this asserts they are byte-identical offline (stub codex, no real CLI).
+if command -v timeout >/dev/null 2>&1; then
+  astub="$(mktemp -d)"; atgt="$(mktemp -d)"; aodir="$(mktemp -d)"
+  printf '#!/usr/bin/env bash\ntrue\n' >"$astub/codex"; chmod +x "$astub/codex"
+  # Real (non-dry) launch through run_one -> writes the masked argv record.
+  PATH="$astub:$PATH" EXTERNAL_AGENTS_OUT="$aodir" \
+    bash "$RUN" --agent codex --read-only --target "$atgt" --prompt 'top secret prompt text' >/dev/null 2>&1
+  argv_rec="$(cat "$aodir/$(basename "$atgt")/codex.argv" 2>/dev/null)"
+  # The masked --dry-run argv for the SAME invocation, with the '  codex ' label stripped.
+  argv_dry="$(bash "$RUN" --agent codex --read-only --target "$atgt" --dry-run --prompt 'top secret prompt text' 2>/dev/null | sed -nE 's/^  codex +//p')"
+  if [ -n "$argv_rec" ] && [ "$argv_rec" = "$argv_dry" ]; then
+    ok "live argv record equals the masked --dry-run argv"
+  else
+    bad "live argv record equals the masked --dry-run argv" "record=[$argv_rec] dry=[$argv_dry]"
+  fi
+  case "$argv_rec" in *"top secret prompt text"*) bad "live argv record masks the prompt (no leak)" "prompt text leaked into the record";; *) ok "live argv record masks the prompt (no leak)";; esac
+  assert_contains "live argv record uses the <PROMPT> placeholder" "$argv_rec" "<PROMPT>"
+  rm -rf "$astub" "$atgt" "$aodir"
+else
+  printf '  skip live-argv-record test (timeout unavailable)\n'
+fi
+
 echo "== bump-version.sh lockstep write (mktemp fixture, real repo untouched) =="
 ft="$(mktemp -d)"
 mkdir -p "$ft/scripts" "$ft/.claude-plugin" "$ft/skills/external-agents"
