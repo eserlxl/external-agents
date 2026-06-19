@@ -174,6 +174,40 @@ assert_contains "--check prints the preflight header"        "$chk_out" "externa
 assert_contains "--check probes cursor as the cursor-agent binary" "$chk_out" "need cursor-agent on PATH"
 assert_exit     "--check exits non-zero when agent CLIs are missing" 1 "$chk_rc"
 
+echo "== agents.json malformed-config resilience (degrade, never crash) =="
+# (1) Hard-malformed: "agents" is an array, not an object -> rejected with a clear
+#     message and exit 2 (conf_problem) before any agent is resolved.
+mfx="$(mktemp)"
+printf '%s' '{"default_tier":"medium","agents":[]}' >"$mfx"
+mc_out="$(bash "$RUN" --conf "$mfx" --list 2>&1)"; mc_rc=$?
+assert_exit     "malformed agents-as-array exits 2"      2 "$mc_rc"
+assert_contains "malformed agents-as-array is explained" "$mc_out" '"agents" must be a JSON object'
+# (2) Soft-malformed: a tier value is a string, not an object. Both config backends
+#     must type-guard it to an empty model and render --list identically (no crash).
+sfx="$(mktemp)"
+printf '%s' '{"default_tier":"medium","agents":{"agy":{"enabled":true,"tiers":{"low":"oops"}}}}' >"$sfx"
+sc_jq="$(bash "$RUN" --conf "$sfx" --list 2>/dev/null)"; sc_jq_rc=$?
+sdir="$(mktemp -d)"; mkdir -p "$sdir/bin"
+for t in bash env python3 grep dirname basename cat sed sort tr cut wc paste date mktemp git head tail; do
+  s="$(command -v "$t" 2>/dev/null)" && ln -s "$s" "$sdir/bin/$t" 2>/dev/null || true
+done
+sc_py="$(PATH="$sdir/bin" "$sdir/bin/bash" "$RUN" --conf "$sfx" --list 2>/dev/null)"; sc_py_rc=$?
+rm -rf "$sdir"
+assert_exit "soft-malformed config: jq backend still exits 0"     0 "$sc_jq_rc"
+assert_exit "soft-malformed config: python backend still exits 0" 0 "$sc_py_rc"
+if [ -n "$sc_jq" ] && [ -n "$sc_py" ]; then
+  if [ "$sc_jq" = "$sc_py" ]; then ok "jq/python3 degrade identically on a malformed tier"
+  else bad "jq/python3 degrade identically on a malformed tier" "backends diverged"; fi
+else
+  printf '  skip soft-malformed parity (could not run both backends)\n'
+fi
+# (3) No agent enabled -> --agent all is refused with exit 2.
+nfx="$(mktemp)"
+printf '%s' '{"default_tier":"medium","agents":{"agy":{"enabled":false,"tiers":{}}}}' >"$nfx"
+bash "$RUN" --conf "$nfx" --agent all --dry-run --prompt x >/dev/null 2>&1
+assert_exit "no enabled agents: --agent all exits 2" 2 "$?"
+rm -f "$mfx" "$sfx" "$nfx"
+
 echo "== shellcheck (regression guard) =="
 if command -v shellcheck >/dev/null 2>&1; then
   if shellcheck "$ROOT/scripts/run-agent.sh" "$ROOT/scripts/bump-version.sh" >/dev/null 2>&1; then
