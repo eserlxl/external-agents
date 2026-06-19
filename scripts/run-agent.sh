@@ -91,6 +91,7 @@ YES=0
 LIST=0
 CHECK=0
 DRYRUN=0
+VERSION=0
 
 usage() {
   cat <<'EOF'
@@ -120,6 +121,7 @@ Usage:
   --list        print the parsed agent config (tiers + enabled) and exit
   --check       preflight: report the JSON reader and whether each candidate CLI is on PATH
   --dry-run     print each agent's resolved launch argv without running it
+  --version, -V print the external-agents plugin version and exit
   --yes, -y     confirm a write run whose --target is not the current directory
 
 SAFETY: in the default --write mode the agents can modify whatever is under --target.
@@ -150,9 +152,20 @@ while [ $# -gt 0 ]; do
     --check) CHECK=1; shift;;
     -y|--yes) YES=1; shift;;
     --dry-run) DRYRUN=1; shift;;
+    --version|-V) VERSION=1; shift;;
     *) echo "run-agent: unknown arg: $1" >&2; usage >&2; exit 2;;
   esac
 done
+
+# --- --version: print the plugin version and exit (needs no agents.json) ----------
+if [ "$VERSION" = "1" ]; then
+  _pj="$PLUGIN_ROOT/.claude-plugin/plugin.json"
+  if   command -v jq      >/dev/null 2>&1; then _ver="$(jq -r '.version // empty' "$_pj" 2>/dev/null)"
+  elif command -v python3 >/dev/null 2>&1; then _ver="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1])).get("version",""))' "$_pj" 2>/dev/null)"
+  else _ver="$(grep -oE '"version"[[:space:]]*:[[:space:]]*"[^"]+"' "$_pj" 2>/dev/null | head -1 | sed -E 's/.*"([^"]+)".*/\1/')"; fi
+  echo "external-agents run-agent.sh ${_ver:-(unknown)}"
+  exit 0
+fi
 
 # --- JSON config backend  (jq preferred, python3 fallback) ------------------------
 # All reads of agents.json funnel through cfg() so the two backends stay co-located

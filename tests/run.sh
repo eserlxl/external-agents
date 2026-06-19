@@ -100,6 +100,11 @@ else
   bad "all version strings agree" "plugin.json=$pv SKILL.md=$sv README=$rv"
 fi
 
+out="$(bash "$RUN" --version 2>/dev/null)"
+assert_contains "run-agent.sh --version prints the plugin version" "$out" "$pv"
+out="$(bash "$RUN" -V 2>/dev/null)"
+assert_contains "run-agent.sh -V prints the plugin version" "$out" "$pv"
+
 echo "== bump-version.sh version compute (--dry-run, no writes) =="
 BV="$ROOT/scripts/bump-version.sh"
 core="${pv%%-*}"   # current release core, pre-release suffix stripped
