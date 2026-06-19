@@ -75,6 +75,13 @@ matrix_row codex  "-s read-only"
 matrix_row claude "--allowedTools"
 matrix_row cursor "--mode plan"
 
+# agy read-only honesty: the best-effort NOTE must be emitted, and nothing may claim agy
+# read-only is "enforced" (that is reserved for codex/claude/cursor).
+agy_note="$(bash "$RUN" --agent agy --read-only --effort medium --dry-run --prompt x 2>&1 >/dev/null)"
+assert_contains "agy read-only emits the best-effort NOTE" "$agy_note" "best-effort"
+agy_all="$(bash "$RUN" --agent agy --read-only --effort medium --dry-run --prompt x 2>&1)"
+case "$agy_all" in *[Ee]nforced*) bad "agy read-only is not over-claimed as enforced" "found an 'enforced' claim in agy output";; *) ok "agy read-only is not over-claimed as enforced";; esac
+
 echo "== jq / python3 config-backend parity (--list byte-identical) =="
 out_jq="$(bash "$RUN" --list 2>/dev/null)"
 tdir="$(mktemp -d)"
