@@ -137,6 +137,23 @@ assert_contains "agy quota CLI unavailable -> fallback" \
   "$(EXTERNAL_AGENTS_AGY_QUOTA_CMD=false bash "$RUN" --agent agy --effort high --dry-run --prompt x 2>/dev/null)" "$FALLBACK"
 rm -f "$stub"
 
+echo "== bump-version.sh lockstep write (mktemp fixture, real repo untouched) =="
+ft="$(mktemp -d)"
+mkdir -p "$ft/scripts" "$ft/.claude-plugin" "$ft/skills/external-agents"
+cp "$ROOT/scripts/bump-version.sh" "$ft/scripts/"
+cp "$ROOT/.claude-plugin/plugin.json" "$ft/.claude-plugin/"
+cp "$ROOT/CHANGELOG.md" "$ROOT/README.md" "$ft/"
+cp "$ROOT/skills/external-agents/SKILL.md" "$ft/skills/external-agents/"
+# ALLOW_DIRTY=1 so the dirty-tree guard self-skips wherever mktemp lands.
+ALLOW_DIRTY=1 bash "$ft/scripts/bump-version.sh" 1.2.3 >/dev/null 2>&1
+assert_exit "bump-version.sh write run succeeds" 0 "$?"
+assert_contains "bump write: plugin.json -> 1.2.3" \
+  "$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["version"])' "$ft/.claude-plugin/plugin.json" 2>/dev/null)" "1.2.3"
+grep -q '^  version: "1.2.3"' "$ft/skills/external-agents/SKILL.md"; assert_exit "bump write: SKILL.md frontmatter synced" 0 "$?"
+grep -q 'version-1.2.3-informational' "$ft/README.md"; assert_exit "bump write: README badge synced" 0 "$?"
+grep -q '## \[1.2.3\]' "$ft/CHANGELOG.md"; assert_exit "bump write: CHANGELOG entry added" 0 "$?"
+rm -rf "$ft"
+
 echo "== shellcheck (regression guard) =="
 if command -v shellcheck >/dev/null 2>&1; then
   if shellcheck "$ROOT/scripts/run-agent.sh" "$ROOT/scripts/bump-version.sh" >/dev/null 2>&1; then
