@@ -59,6 +59,22 @@ dry "cursor read-only -> composer-2.5"           "composer-2.5"                 
 dry "cursor write -> --force"                    "--force"                       -- --agent cursor --write     --effort medium
 dry "cursor binary is cursor-agent"              "cursor-agent"                  -- --agent cursor --write     --effort medium
 
+echo "== enforcement-matrix accuracy (docs/threat-model.md vs driver read-only argv) =="
+# For each agent the read-only mechanism the driver actually emits must also be the one the
+# published matrix documents — so docs/threat-model.md cannot silently drift from the driver.
+TM="$ROOT/docs/threat-model.md"
+matrix_row() {  # agent  mechanism-token
+  local a="$1" mech="$2" ro
+  ro="$(bash "$RUN" --agent "$a" --read-only --effort medium --dry-run --prompt x 2>/dev/null)"
+  case "$ro" in *"$mech"*) : ;; *) bad "matrix: $a read-only argv emits '$mech'" "driver argv changed"; return;; esac
+  if grep -qF -- "$mech" "$TM"; then ok "matrix: doc documents '$mech' for $a (driver agrees)"
+  else bad "matrix: doc documents '$mech' for $a" "doc/driver drift"; fi
+}
+matrix_row agy    "--sandbox"
+matrix_row codex  "-s read-only"
+matrix_row claude "--allowedTools"
+matrix_row cursor "--mode plan"
+
 echo "== jq / python3 config-backend parity (--list byte-identical) =="
 out_jq="$(bash "$RUN" --list 2>/dev/null)"
 tdir="$(mktemp -d)"
