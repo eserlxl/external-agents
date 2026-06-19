@@ -208,6 +208,20 @@ bash "$RUN" --conf "$nfx" --agent all --dry-run --prompt x >/dev/null 2>&1
 assert_exit "no enabled agents: --agent all exits 2" 2 "$?"
 rm -f "$mfx" "$sfx" "$nfx"
 
+echo "== --prompt-file resolution (stdin / file / missing / empty) =="
+# All via --dry-run so no agent launches; the prompt is resolved before the dry-run print.
+pf_stdin="$(printf 'from stdin' | bash "$RUN" --agent codex --dry-run --prompt-file - 2>/dev/null)"; pf_stdin_rc=$?
+assert_exit     "--prompt-file - reads stdin (exit 0)"  0 "$pf_stdin_rc"
+assert_contains "--prompt-file - resolves a codex argv" "$pf_stdin" "codex"
+pf="$(mktemp)"; printf 'task from a file' >"$pf"
+bash "$RUN" --agent codex --dry-run --prompt-file "$pf" >/dev/null 2>&1
+assert_exit "--prompt-file FILE reads the file (exit 0)" 0 "$?"
+rm -f "$pf"
+bash "$RUN" --agent codex --dry-run --prompt-file /no/such/prompt/file >/dev/null 2>&1
+assert_exit "--prompt-file missing file exits 2" 2 "$?"
+bash "$RUN" --agent codex --dry-run --prompt-file /dev/null >/dev/null 2>&1
+assert_exit "--prompt-file empty prompt exits 2" 2 "$?"
+
 echo "== shellcheck (regression guard) =="
 if command -v shellcheck >/dev/null 2>&1; then
   if shellcheck "$ROOT/scripts/run-agent.sh" "$ROOT/scripts/bump-version.sh" >/dev/null 2>&1; then
