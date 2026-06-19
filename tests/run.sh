@@ -186,6 +186,37 @@ assert_contains "agy quota CLI unavailable -> fallback" \
   "$(EXTERNAL_AGENTS_AGY_QUOTA_CMD=false bash "$RUN" --agent agy --effort high --dry-run --prompt x 2>/dev/null)" "$FALLBACK"
 rm -f "$stub"
 
+echo "== transcript secret-redaction (stub agent, real redact path) =="
+# run_stub_transcript TEXT FILEVAR -> stdout = the driver's echoed (redacted) transcript;
+# the persisted (redacted) transcript file content is written to the path FILEVAR (a disk
+# write so it survives the command-substitution subshell). A stub 'codex' emits TEXT, so the
+# REAL run_one -> redact -> persist -> echo path runs offline (no network / real CLI).
+run_stub_transcript() {
+  local text="$1" filevar="$2" sdir tgt odir
+  sdir="$(mktemp -d)"; tgt="$(mktemp -d)"; odir="$(mktemp -d)"
+  cat >"$sdir/codex" <<'STUBEOF'
+#!/usr/bin/env bash
+printf '%s\n' "$STUB_TEXT"
+STUBEOF
+  chmod +x "$sdir/codex"
+  STUB_TEXT="$text" PATH="$sdir:$PATH" EXTERNAL_AGENTS_OUT="$odir" \
+    bash "$RUN" --agent codex --read-only --target "$tgt" --prompt x 2>/dev/null
+  cat "$odir/$(basename "$tgt")/codex.md" 2>/dev/null >"$filevar"
+  rm -rf "$sdir" "$tgt" "$odir"
+}
+if command -v timeout >/dev/null 2>&1; then
+  SECRET="sk-ABCDEFGHIJKLMNOPQRSTUV0123456789"
+  rf="$(mktemp)"
+  red_out="$(run_stub_transcript "leaking $SECRET in agent output" "$rf")"
+  red_file="$(cat "$rf")"; rm -f "$rf"
+  case "$red_out"  in *"$SECRET"*) bad "redaction: raw secret absent from echoed transcript" "leaked to stdout";; *) ok "redaction: raw secret absent from echoed transcript";; esac
+  assert_contains "redaction: placeholder present in echoed transcript"  "$red_out"  "<REDACTED>"
+  case "$red_file" in *"$SECRET"*) bad "redaction: raw secret absent from persisted transcript" "leaked to disk";; *) ok "redaction: raw secret absent from persisted transcript";; esac
+  assert_contains "redaction: placeholder present in persisted transcript" "$red_file" "<REDACTED>"
+else
+  printf '  skip redaction tests (timeout unavailable)\n'
+fi
+
 echo "== bump-version.sh lockstep write (mktemp fixture, real repo untouched) =="
 ft="$(mktemp -d)"
 mkdir -p "$ft/scripts" "$ft/.claude-plugin" "$ft/skills/external-agents"
