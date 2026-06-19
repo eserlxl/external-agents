@@ -222,6 +222,15 @@ assert_exit "--prompt-file missing file exits 2" 2 "$?"
 bash "$RUN" --agent codex --dry-run --prompt-file /dev/null >/dev/null 2>&1
 assert_exit "--prompt-file empty prompt exits 2" 2 "$?"
 
+echo "== --read-only / --write mutual exclusion (safety guard) =="
+# A read-only intent must never silently degrade into a write run (external agents
+# could then mutate the tree) — both flag orders must be refused with exit 2.
+bash "$RUN" --agent codex --read-only --write --dry-run --prompt x >/dev/null 2>&1
+assert_exit "--read-only then --write exits 2" 2 "$?"
+mx_err="$(bash "$RUN" --agent codex --write --read-only --dry-run --prompt x 2>&1 >/dev/null)"; mx_rc=$?
+assert_exit     "--write then --read-only exits 2"    2 "$mx_rc"
+assert_contains "mutual-exclusion error is explained" "$mx_err" "mutually exclusive"
+
 echo "== shellcheck (regression guard) =="
 if command -v shellcheck >/dev/null 2>&1; then
   if shellcheck "$ROOT/scripts/run-agent.sh" "$ROOT/scripts/bump-version.sh" >/dev/null 2>&1; then
