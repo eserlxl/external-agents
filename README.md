@@ -214,6 +214,18 @@ primary **only when quota is positively confirmed available**. If the primary is
   that there is no baseline to diff or revert. Still review the diff before trusting the
   agent's self-report.
 
+## Testing
+
+Offline, dependency-light tests live in `tests/`. They exercise `run-agent.sh` only
+through `--dry-run`, `--list`, and its early-exit error paths, so **no external agent
+CLI is launched** — they assert the `agents.json` tier→argv mapping, jq/python3 config
+parity, the effort and write-mode safety gates, and that the version string stays in
+lockstep across `plugin.json`, the skill frontmatter, and the README badge:
+
+```bash
+bash tests/run.sh
+```
+
 ## Files
 
 ```
