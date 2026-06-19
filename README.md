@@ -113,7 +113,7 @@ bash scripts/run-agent.sh --agent agy --dry-run --prompt "..."
 | `--model M` | model override — wins over the tier's model; native effort still comes from the tier |
 | `--claude-perm MODE` | claude write-mode permission mode (default `acceptEdits`; use `bypassPermissions` for shell) |
 | `--timeout S` | per-agent timeout, seconds (default 1800) |
-| `--out DIR` | transcript dir (default `~/.external-agents/logs/<project>`) |
+| `--out DIR` | transcript dir (default `~/.external-agents/logs/<project>`; the base dir is overridable with the `EXTERNAL_AGENTS_OUT` env var) |
 | `--conf FILE` | agent config JSON (default `agents.json`) |
 | `--list` / `--check` / `--dry-run` | inspect config / preflight reader + CLIs / preview argv |
 

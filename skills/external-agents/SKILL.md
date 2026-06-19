@@ -119,7 +119,8 @@ hard reasoning, security, or architecture → `high`/`xhigh`. Omit `--effort` to
 config's `default_tier` (`medium`). A `--model M` still overrides the resolved model directly.
 
 Other flags: `--model M`, `--claude-perm MODE` (use `bypassPermissions` for claude write
-tasks needing shell), `--yes` (confirm a non-cwd write target), `--timeout S`, `--out DIR`.
+tasks needing shell), `--yes` (confirm a non-cwd write target), `--timeout S`, `--out DIR`
+(the transcript base dir also honors the `EXTERNAL_AGENTS_OUT` env var).
 Run `run-agent.sh --check` to verify the JSON reader + CLIs are installed, `--list` to see
 the resolved tier table, and `--dry-run` to preview the exact argv before a real run.
 
