@@ -100,6 +100,8 @@ else
 fi
 
 echo "== per-agent jq/python3 dry-run parity (model/effort/fallback ops under both backends) =="
+# Parity gate: every cfg op must produce byte-identical output across the jq and python3 backends;
+# when a query type changes, update both backends in run-agent.sh and these parity blocks together.
 pdir="$(mktemp -d)"; mk_restricted_bin "$pdir"
 parity_dry() {  # agent  effort  [extra env assignment]
   local a="$1" e="$2" env="${3:-}" oj op

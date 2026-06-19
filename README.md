@@ -270,6 +270,12 @@ lockstep across `plugin.json`, the skill frontmatter, and the README badge:
 bash tests/run.sh
 ```
 
+Every `cfg` config op (`default_tier`, `agents`, `enabled`, `tiers`, `model`, `effort`, `fallback`)
+is **parity-gated**: the `jq` and `python3` backends must produce byte-identical output (the suite
+checks `--list` and per-agent `--dry-run` across both, including malformed-config degradation). When
+you add or change a config query type, update **both** backends in `scripts/run-agent.sh` and the
+parity block in `tests/run.sh` together.
+
 ## Files
 
 ```
