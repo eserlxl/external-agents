@@ -88,6 +88,17 @@ except jsonschema.ValidationError:
 PY
   }
   assert_contains "shipped agents.json validates against the schema" "$(schema_check "$ROOT/agents.json")" "OK"
+  # Negative fixtures: each deliberately invalid config must be REJECTED by the schema.
+  nfx="$(mktemp)"
+  printf '%s' '{"default_tier":"medium","agents":{"agy":{"enabled":true,"tiers":{"low":{}}}}}' >"$nfx"
+  assert_contains "schema rejects a tier missing model"        "$(schema_check "$nfx")" "REJECTED"
+  printf '%s' '{"default_tier":5,"agents":{"agy":{"enabled":true,"tiers":{"low":{"model":"m"}}}}}' >"$nfx"
+  assert_contains "schema rejects wrong-typed default_tier"    "$(schema_check "$nfx")" "REJECTED"
+  printf '%s' '{"default_tier":"medium","agents":{"agy":{"enabled":true,"tiers":"oops"}}}' >"$nfx"
+  assert_contains "schema rejects non-object tiers"            "$(schema_check "$nfx")" "REJECTED"
+  printf '%s' '{"default_tier":"medium","agents":{"codex":{"enabled":true,"tiers":{"high":{"model":"m","fallback":"g"}}}}}' >"$nfx"
+  assert_contains "schema rejects fallback on a non-agy agent" "$(schema_check "$nfx")" "REJECTED"
+  rm -f "$nfx"
 else
   printf '  skip schema validation (python3 jsonschema not installed)\n'
 fi
