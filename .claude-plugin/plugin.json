@@ -1,7 +1,7 @@
 {
   "name": "external-agents",
-  "version": "0.4.0",
-  "description": "Run external coding-agent CLIs (agy, codex, optionally claude) as autonomous sub-agents from inside Claude Code. Dispatch one prompt to a single external agent or fan it out to all in parallel, read-write by default (--read-only available), and collect every response inline. Generalises the council's read-only eval panel into a delegation tool.",
+  "version": "0.5.0",
+  "description": "Run external coding-agent CLIs (agy, codex, cursor, optionally claude) as autonomous sub-agents from inside Claude Code. Dispatch one prompt to a single external agent or fan it out to all in parallel, read-write by default (--read-only available), and collect every response inline. The cursor agent runs Cursor's own models (Composer 2.5). Generalises the council's read-only eval panel into a delegation tool.",
   "author": {
     "name": "Eser KUBALI",
     "email": "eserlxl@gmail.com"
@@ -13,6 +13,8 @@
     "delegation",
     "agy",
     "codex",
+    "cursor",
+    "composer",
     "orchestration"
   ]
 }

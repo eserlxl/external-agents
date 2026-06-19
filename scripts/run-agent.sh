@@ -3,8 +3,8 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 #
 # external-agents/scripts/run-agent.sh — dispatch ONE prompt to external coding
-# agent CLIs (agy / codex / claude) as autonomous sub-agents, then collect each
-# agent's response. This generalises council/run-council.sh from a fixed,
+# agent CLIs (agy / codex / claude / cursor) as autonomous sub-agents, then collect
+# each agent's response. This generalises council/run-council.sh from a fixed,
 # read-only evaluation panel to an arbitrary task the agents may carry out in
 # the working tree.
 #
@@ -18,17 +18,24 @@
 #             NOTE: acceptEdits auto-accepts file EDITS but denies other shell
 #             commands non-interactively. For tasks that must build / test / run
 #             commands, pass --claude-perm bypassPermissions.
+#     cursor  cursor-agent -p --force --trust --workspace DIR [--model M] -- PROMPT
+#             NOTE: -p is headless print mode; --force (alias --yolo) auto-approves
+#             write + shell tools; --trust avoids the non-interactive workspace-trust
+#             prompt. The binary is `cursor-agent`, not `cursor` (the IDE).
 #
-#   READ-ONLY  (--read-only — agents observe and report; codex/claude are HARD
+#   READ-ONLY  (--read-only — agents observe and report; codex/claude/cursor are HARD
 #               read-only, agy is best-effort):
 #     agy     agy -p PROMPT --sandbox --add-dir DIR [--model M]
 #             NOTE: agy --sandbox restricts the terminal but does NOT block agy's
 #             file-edit tools, so agy read-only is best-effort, NOT enforced. Use
-#             codex/claude for a hard guarantee, or point --target at a throwaway copy.
+#             codex/claude/cursor for a hard guarantee, or point --target at a throwaway copy.
 #     codex   codex exec -s read-only -C DIR --skip-git-repo-check [-m M] [-c model_reasoning_effort="E"] PROMPT
 #     claude  claude -p PROMPT --allowedTools Read Grep Glob [--model M] [--effort E]
+#     cursor  cursor-agent -p --mode plan --trust --workspace DIR [--model M] -- PROMPT
+#             NOTE: --mode plan is Cursor's enforced read-only/planning mode (analyze,
+#             propose plans, no edits) — a hard guarantee, like codex/claude.
 #
-#   (agy and claude run with cwd=DIR; codex takes -C DIR.)
+#   (agy and claude run with cwd=DIR; codex takes -C DIR; cursor takes --workspace DIR.)
 #
 # EFFORT TIERS.  The caller picks ONE semantic effort level — low | medium | high |
 # xhigh — and agents.json maps that tier to the right (model, native effort) for
@@ -36,12 +43,13 @@
 #     agy    -> Gemini 3.5 Flash (High)              (agy bakes the tier into the model)
 #     codex  -> gpt-5.5   model_reasoning_effort=high
 #     claude -> claude-opus-4-8   --effort high
+#     cursor -> composer-2.5                         (cursor bakes the tier into the model)
 # With no --effort the config's default_tier is used. A per-run --model overrides
 # only the resolved model; the native effort still comes from the tier. Reading
 # agents.json needs `jq` (preferred) or `python3` on PATH.
 #
 # Usage:
-#   run-agent.sh --agent <agy|codex|claude|all> (--prompt "..." | --prompt-file F | --prompt-file -)
+#   run-agent.sh --agent <agy|codex|claude|cursor|all> (--prompt "..." | --prompt-file F | --prompt-file -)
 #                [--target DIR] [--read-only | --write] [--effort TIER] [--model M]
 #                [--claude-perm MODE] [--timeout SECS] [--out DIR] [--conf FILE]
 #                [--list] [--check] [--dry-run] [-h | --help]
@@ -52,8 +60,8 @@
 #
 # SAFETY: in the default read-write mode the agents can modify whatever is under
 # --target. Point --target at the tree you actually want changed, and NEVER at a
-# tree containing private IP you would not ship to an external provider (agy and
-# codex are external services). Use --read-only when you only want analysis.
+# tree containing private IP you would not ship to an external provider (agy,
+# codex, and cursor are external services). Use --read-only when you only want analysis.
 set -uo pipefail
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
@@ -79,15 +87,15 @@ DRYRUN=0
 usage() {
   cat <<'EOF'
 run-agent.sh — dispatch ONE prompt to external coding agent CLIs
-(agy / codex / claude) as autonomous sub-agents, then collect each response.
+(agy / codex / claude / cursor) as autonomous sub-agents, then collect each response.
 
 Usage:
-  run-agent.sh --agent <agy|codex|claude|all> (--prompt "..." | --prompt-file F | --prompt-file -)
+  run-agent.sh --agent <agy|codex|claude|cursor|all> (--prompt "..." | --prompt-file F | --prompt-file -)
                [--target DIR] [--read-only | --write] [--effort TIER] [--model M]
                [--claude-perm MODE] [--timeout SECS] [--out DIR] [--conf FILE]
                [--list] [--check] [--dry-run] [-h | --help]
 
-  --agent       agy | codex | claude | all  (all = every agent enabled in agents.json)
+  --agent       agy | codex | claude | cursor | all  (all = every agent enabled in agents.json)
   --prompt      the task/prompt (single argv element; never word-split)
   --prompt-file read the prompt from a file, or - for stdin
   --target DIR  directory the agents work in (default: cwd)
@@ -247,6 +255,10 @@ cfg() {
   esac
 }
 
+# The CLI binary an agent name maps to. Identical to the name for agy/codex/claude;
+# the cursor agent's binary is `cursor-agent` (NOT `cursor`, which is the IDE).
+agent_bin() { case "$1" in cursor) printf 'cursor-agent';; *) printf '%s' "$1";; esac; }
+
 # Why the configured agents.json can't be read, or "" if it's fine.
 conf_problem() {
   [ -n "$JSON_BACKEND" ] || { printf '%s' "reading $CONF needs 'jq' or 'python3' on PATH (neither found)"; return; }
@@ -276,14 +288,17 @@ if [ "$CHECK" = "1" ]; then
     printf '  MISS %-7s need jq or python3 on PATH to read %s\n' "json" "$(basename "$CONF")"; missing=$((missing + 1))
   fi
   case "$AGENT" in
-    agy|codex|claude) cand=("$AGENT");;
-    *)                cand=(agy codex claude);;   # 'all' or unset -> check every known cli
+    agy|codex|claude|cursor) cand=("$AGENT");;
+    *)                       cand=(agy codex claude cursor);;   # 'all' or unset -> check every known cli
   esac
   seen=""
   for a in "${cand[@]}"; do
     case ",$seen," in *",$a,"*) continue;; esac; seen="$seen,$a"
-    if command -v "$a" >/dev/null 2>&1; then
-      printf '  ok   %-7s %s\n' "$a" "$(command -v "$a")"
+    bin="$(agent_bin "$a")"
+    if command -v "$bin" >/dev/null 2>&1; then
+      printf '  ok   %-7s %s\n' "$a" "$(command -v "$bin")"
+    elif [ "$bin" != "$a" ]; then
+      printf '  MISS %-7s need %s on PATH\n' "$a" "$bin"; missing=$((missing + 1))
     else
       printf '  MISS %-7s not on PATH\n' "$a"; missing=$((missing + 1))
     fi
@@ -322,11 +337,11 @@ if [ "$AGENT" = "all" ]; then
   while IFS= read -r a; do [ -n "$a" ] && RUN+=("$a"); done < <(cfg enabled)
   [ "${#RUN[@]}" -gt 0 ] || { echo "run-agent: --agent all but no agents enabled in $CONF" >&2; exit 2; }
 elif [ -n "$AGENT" ]; then
-  case "$AGENT" in agy|codex|claude) RUN=("$AGENT");; *) echo "run-agent: unknown agent '$AGENT' (want agy|codex|claude|all)" >&2; exit 2;; esac
+  case "$AGENT" in agy|codex|claude|cursor) RUN=("$AGENT");; *) echo "run-agent: unknown agent '$AGENT' (want agy|codex|claude|cursor|all)" >&2; exit 2;; esac
 fi
 
 # --- validate the run request -----------------------------------------------------
-[ -n "$AGENT" ] || { echo "run-agent: --agent is required (agy|codex|claude|all)" >&2; exit 2; }
+[ -n "$AGENT" ] || { echo "run-agent: --agent is required (agy|codex|claude|cursor|all)" >&2; exit 2; }
 [ -d "$TARGET" ] || { echo "run-agent: --target '$TARGET' is not a directory" >&2; exit 2; }
 
 # The requested effort level is a model TIER. Blank --effort -> config default_tier.
@@ -365,7 +380,7 @@ if [ "$MODE" = "write" ] && [ "$DRYRUN" = "0" ]; then
     {
       echo "run-agent: write run on a non-cwd target needs confirmation."
       echo "  target : $TARGET"
-      echo "  agents : ${RUN[*]}  (agy/codex ship this whole tree to EXTERNAL providers)"
+      echo "  agents : ${RUN[*]}  (agy/codex/cursor ship this whole tree to EXTERNAL providers)"
       echo "  re-run with --yes once you've confirmed the scope, or use --read-only."
     } >&2
     exit 2
@@ -393,7 +408,7 @@ if [ "$DRYRUN" = "0" ]; then mkdir -p "$OUT"; OUT="$(cd "$OUT" && pwd -P)"; fi
 # agy --sandbox is best-effort, NOT a hard write barrier (see header) — warn so a
 # read-only run is never mistaken for an enforced guarantee.
 if [ "$MODE" = "readonly" ]; then
-  for a in "${RUN[@]}"; do [ "$a" = "agy" ] && { echo "run-agent: NOTE — agy read-only relies on --sandbox, which is best-effort and may still permit writes. For a hard guarantee use codex/claude, or target a throwaway copy." >&2; break; }; done
+  for a in "${RUN[@]}"; do [ "$a" = "agy" ] && { echo "run-agent: NOTE — agy read-only relies on --sandbox, which is best-effort and may still permit writes. For a hard guarantee use codex/claude/cursor, or target a throwaway copy." >&2; break; }; done
 fi
 # A write run with no git baseline has no diff/revert recovery path — warn.
 if [ "$MODE" = "write" ] && [ "$DRYRUN" = "0" ] && [ -z "$TOP" ]; then
@@ -423,6 +438,15 @@ build_argv() {  # agent ; sets global ARGV[]
       PROMPT_IDX=2
       [ -n "$m" ] && ARGV+=(--model "$m")
       [ -n "$e" ] && ARGV+=(--effort "$e");;
+    cursor)
+      # cursor-agent: -p headless print mode; the prompt is the trailing positional.
+      # readonly -> --mode plan (enforced no-edit); write -> --force (auto-approve all
+      # tools). --trust avoids the non-interactive workspace-trust prompt. The closing
+      # `--` ends option parsing so a prompt starting with '-' can't be read as a flag.
+      if [ "$MODE" = "readonly" ]; then ARGV=(cursor-agent -p --mode plan --trust --workspace "$TARGET")
+      else ARGV=(cursor-agent -p --force --trust --workspace "$TARGET"); fi
+      [ -n "$m" ] && ARGV+=(--model "$m")
+      ARGV+=(-- "$PROMPT"); PROMPT_IDX=$(( ${#ARGV[@]} - 1 ));;
     *) echo "run-agent: unknown agent '$a'" >&2; return 1;;
   esac
   return 0

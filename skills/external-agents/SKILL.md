@@ -1,18 +1,18 @@
 ---
 name: external-agents
 description: >
-  Delegate a task to external coding-agent CLIs — agy and codex (and optionally claude) —
-  running them as autonomous sub-agents in the working tree, then collect each agent's
-  response. Trigger when the user wants to "ask codex / agy to ...", "have codex / agy
-  <do X>", "delegate this to codex / agy", "run the external agent(s)", "fan this out to
-  agy and codex", "get a second agent to ...", or "have the external agents review /
-  analyze / implement / fix ...". Read-write by default (the agents may edit files);
-  switch to read-only when the user only wants analysis. Drives each cli via
-  scripts/run-agent.sh; never reimplement the driving logic here.
+  Delegate a task to external coding-agent CLIs — agy, codex, and cursor (and optionally
+  claude) — running them as autonomous sub-agents in the working tree, then collect each
+  agent's response. Trigger when the user wants to "ask codex / agy / cursor to ...", "have
+  codex / agy / cursor <do X>", "delegate this to codex / agy / cursor", "run the external
+  agent(s)", "fan this out to agy and codex", "use cursor / composer", "get a second agent
+  to ...", or "have the external agents review / analyze / implement / fix ...". Read-write
+  by default (the agents may edit files); switch to read-only when the user only wants
+  analysis. Drives each cli via scripts/run-agent.sh; never reimplement the driving logic here.
 license: GPL-3.0-or-later
 metadata:
   plugin: external-agents
-  version: "0.4.0"
+  version: "0.5.0"
 ---
 
 # external-agents
@@ -22,6 +22,7 @@ result back. The agents are real CLIs already on the machine:
 
 - **agy** — multi-model agent (Gemini / Claude / GPT-OSS tiers; tier baked into the model name)
 - **codex** — OpenAI Codex CLI (`codex exec`)
+- **cursor** — Cursor's headless agent CLI (`cursor-agent`), running Cursor's own models (Composer 2.5)
 - **claude** — a nested Claude Code session (available, not in the default `all` set)
 
 You do **not** drive the CLIs by hand. A single deterministic script,
@@ -31,7 +32,8 @@ transcript. Your job is to (1) read the user's intent, (2) resolve four things �
 
 ## 1. Resolve the agent
 
-- Names an agent ("ask **codex**", "have **agy**", "use **claude**") → that agent.
+- Names an agent ("ask **codex**", "have **agy**", "use **claude**", "use **cursor**" /
+  "use **composer**") → that agent.
 - "the external agents", "both", "all of them", "fan out", or names two+ agents →
   `all` (every agent enabled in `agents.json`, run in parallel).
 - Unspecified → `all` if the user clearly wants breadth/a panel; otherwise ask which one,
@@ -47,17 +49,22 @@ transcript. Your job is to (1) read the user's intent, (2) resolve four things �
 
 When in doubt between the two, prefer **read-only** and say so — it is the safe direction.
 
-Two CLI-specific caveats to pass on to the user:
+Three CLI-specific caveats to pass on to the user:
 
 - **agy read-only is best-effort, not enforced.** `agy --sandbox` restricts the terminal
   but does not hard-block agy's file-edit tools, so a read-only fan-out that includes agy
-  *could* still mutate the tree. For a hard guarantee, fan out to `codex`/`claude` only
-  (their read-only modes are enforced), or point `--target` at a throwaway copy. The
+  *could* still mutate the tree. For a hard guarantee, fan out to `codex`/`claude`/`cursor`
+  only (their read-only modes are enforced), or point `--target` at a throwaway copy. The
   script prints a NOTE whenever agy runs read-only.
 - **claude write tasks that must run shell commands** (build/test/git) need
   `--claude-perm bypassPermissions` — the default `acceptEdits` auto-accepts file edits
   but silently denies other Bash, so "implement X and run the tests" would edit but skip
   the tests and still exit 0. Add `--claude-perm bypassPermissions` for those tasks.
+- **cursor needs prior auth, and its binary is `cursor-agent`.** The `cursor` agent calls
+  `cursor-agent` (Cursor's headless CLI), not `cursor` (the IDE), and must be signed in
+  first — `cursor-agent login` or a `CURSOR_API_KEY` — or the run fails. Its read-only mode
+  (`--mode plan`) is enforced (analyze/plan, no edits), so it is a hard guarantee like
+  codex/claude; it runs Cursor's own models (Composer 2.5).
 
 ## 3. Resolve the target  (default: current directory)
 
@@ -65,10 +72,10 @@ Two CLI-specific caveats to pass on to the user:
 - If the user names a subdirectory or repo ("in `src/auth`", "the planwright repo"),
   pass that as `--target`.
 - **Safety gate (read-write only):** the agents can modify anything under `--target`, and
-  agy/codex ship the tree to external providers. The script enforces this: a write run
+  agy/codex/cursor ship the tree to external providers. The script enforces this: a write run
   whose `--target` is **not the current working directory** is refused unless you pass
   `--yes`. So before a non-cwd write, **confirm scope with the user** (show them the
-  resolved target and that agy/codex are external), and only then add `--yes`. Never
+  resolved target and that agy/codex/cursor are external), and only then add `--yes`. Never
   target a tree holding private IP. The script also refuses to write inside its own
   plugin directory, or in any directory that *contains* the plugin (e.g. a monorepo root).
 

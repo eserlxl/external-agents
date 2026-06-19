@@ -4,6 +4,19 @@ All notable changes to external-agents are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/),
 and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [0.5.0] - 2026-06-19
+
+### Added
+- **`cursor` agent.** A fourth external agent driving Cursor's headless CLI (`cursor-agent`)
+  to run Cursor's own models, defaulting to Composer 2.5. Read-write uses `-p --force --trust`
+  (auto-approve edits + shell); read-only uses `-p --mode plan --trust` — Cursor's *enforced*
+  no-edit planning mode, a hard read-only guarantee like codex/claude. The prompt is passed as
+  the trailing positional after `--`, so a prompt starting with `-` can't be read as a flag.
+  Ships **enabled** in `agents.json` (so `--agent all` includes it) with every tier mapped to
+  `composer-2.5` (Composer self-calibrates effort). Its CLI binary is `cursor-agent`, not
+  `cursor` (the IDE); `--check` resolves and reports the correct binary. Requires
+  `cursor-agent login` (or `CURSOR_API_KEY`).
+
 ## [0.4.0] - 2026-06-19
 
 ### Added
