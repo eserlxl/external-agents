@@ -225,6 +225,10 @@ primary **only when quota is positively confirmed available**. If the primary is
 
 ## Safety
 
+For the full trust-boundary analysis and the per-CLI enforcement matrix, see
+[docs/threat-model.md](docs/threat-model.md); to report a vulnerability privately, see
+[SECURITY.md](SECURITY.md).
+
 - **Read-write is the default.** The agents can modify anything under `--target`. Point it
   at the tree you actually want changed; use `--read-only` when you only want analysis.
 - **Non-cwd writes need `--yes`.** A write run whose `--target` is not the current working
