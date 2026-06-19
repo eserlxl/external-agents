@@ -31,6 +31,17 @@ dry() {
   assert_contains "$desc" "$out" "$needle"
 }
 
+# mk_restricted_bin DIR — populate DIR/bin with the shell utilities run-agent.sh needs
+# but NO agent CLIs and NO jq, so a run under PATH=DIR/bin forces the python3 config
+# backend and reports every agent missing. Shared by the parity / --check / malformed tests.
+mk_restricted_bin() {
+  mkdir -p "$1/bin"
+  local t s
+  for t in bash env python3 grep dirname basename cat sed sort tr cut wc paste date mktemp git head tail; do
+    s="$(command -v "$t" 2>/dev/null)" && ln -s "$s" "$1/bin/$t" 2>/dev/null || true
+  done
+}
+
 echo "== run-agent.sh --dry-run argv resolution (agents.json tier mapping) =="
 dry "agy read-only -> --sandbox"                 "--sandbox"                     -- --agent agy    --read-only --effort medium
 dry "agy read-only -> mapped Gemini model"       "Gemini 3.5 Flash (Medium)"     -- --agent agy    --read-only --effort medium
@@ -49,10 +60,7 @@ dry "cursor binary is cursor-agent"              "cursor-agent"                 
 echo "== jq / python3 config-backend parity (--list byte-identical) =="
 out_jq="$(bash "$RUN" --list 2>/dev/null)"
 tdir="$(mktemp -d)"
-mkdir -p "$tdir/bin"
-for t in bash env python3 grep dirname basename cat sed sort tr cut wc paste date mktemp git head tail; do
-  s="$(command -v "$t" 2>/dev/null)" && ln -s "$s" "$tdir/bin/$t" 2>/dev/null || true
-done
+mk_restricted_bin "$tdir"
 # Restricted PATH hides jq but keeps python3 -> forces the python backend.
 out_py="$(PATH="$tdir/bin" "$tdir/bin/bash" "$RUN" --list 2>/dev/null)"
 rm -rf "$tdir"
@@ -171,10 +179,7 @@ echo "== --check preflight (diagnostic; restricted PATH, no agent CLIs) =="
 # so every candidate (agy/codex/claude/cursor) must be reported missing and the exit
 # code must reflect it. Reuses the restricted-bin technique from the parity test above.
 cdir="$(mktemp -d)"
-mkdir -p "$cdir/bin"
-for t in bash env python3 grep dirname basename cat sed sort tr cut wc paste date mktemp git head tail; do
-  s="$(command -v "$t" 2>/dev/null)" && ln -s "$s" "$cdir/bin/$t" 2>/dev/null || true
-done
+mk_restricted_bin "$cdir"
 chk_out="$(PATH="$cdir/bin" "$cdir/bin/bash" "$RUN" --check 2>&1)"; chk_rc=$?
 rm -rf "$cdir"
 assert_contains "--check prints the preflight header"        "$chk_out" "external-agents preflight:"
@@ -194,10 +199,7 @@ assert_contains "malformed agents-as-array is explained" "$mc_out" '"agents" mus
 sfx="$(mktemp)"
 printf '%s' '{"default_tier":"medium","agents":{"agy":{"enabled":true,"tiers":{"low":"oops"}}}}' >"$sfx"
 sc_jq="$(bash "$RUN" --conf "$sfx" --list 2>/dev/null)"; sc_jq_rc=$?
-sdir="$(mktemp -d)"; mkdir -p "$sdir/bin"
-for t in bash env python3 grep dirname basename cat sed sort tr cut wc paste date mktemp git head tail; do
-  s="$(command -v "$t" 2>/dev/null)" && ln -s "$s" "$sdir/bin/$t" 2>/dev/null || true
-done
+sdir="$(mktemp -d)"; mk_restricted_bin "$sdir"
 sc_py="$(PATH="$sdir/bin" "$sdir/bin/bash" "$RUN" --conf "$sfx" --list 2>/dev/null)"; sc_py_rc=$?
 rm -rf "$sdir"
 assert_exit "soft-malformed config: jq backend still exits 0"     0 "$sc_jq_rc"
