@@ -289,6 +289,11 @@ bash tests/live-smoke.sh                 # unset/0 -> skips every live step, exi
 EXTERNAL_AGENTS_LIVE=1 bash tests/live-smoke.sh   # 1 -> arms the harness against reachable CLIs
 ```
 
+When armed, the harness scopes itself to the agents actually installed (via the driver's
+`run-agent.sh --discover` surface): each **reachable** agent is queued for live checks, and each
+**unreachable** one is skipped with a clear per-agent line. Absence of a CLI is never a failure — an
+environment with no agents on `PATH` reports every agent skipped and still exits 0.
+
 ## Files
 
 ```

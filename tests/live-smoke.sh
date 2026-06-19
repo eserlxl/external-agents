@@ -31,20 +31,28 @@ RUN="$ROOT/scripts/run-agent.sh"
 
 echo "external-agents live smoke: armed (EXTERNAL_AGENTS_LIVE=1)"
 
-# discover_reachable — print the agent names whose CLI is on PATH, one per line.
-# Delegates to the driver's machine-readable --discover surface (built from the same
-# agent_bin/command -v probe as --check), so the harness scopes itself to the
-# installed set without re-implementing detection. Auth is verified later, live.
-discover_reachable() {
-  "$RUN" --discover 2>/dev/null | awk '$2 == "present" { print $1 }'
-}
+# Scope the harness to reachable agents and skip the rest with a clear per-agent line.
+# Discovery is the driver's machine-readable --discover surface (same agent_bin /
+# command -v probe as --check), so the harness never re-implements detection. Absence
+# is NEVER a failure: an environment with no agent CLIs on PATH still exits 0.
+discovered="$("$RUN" --discover 2>/dev/null)"
+reachable=()
+while read -r a state _; do
+  [ -n "$a" ] || continue
+  if [ "$state" = "present" ]; then
+    reachable+=("$a")
+  else
+    echo "live smoke: $a skipped (not reachable on PATH)"
+  fi
+done <<EOF
+$discovered
+EOF
 
-reachable="$(discover_reachable)"
-if [ -n "$reachable" ]; then
-  echo "live smoke: reachable agents: $(printf '%s' "$reachable" | tr '\n' ' ')"
-else
-  echo "live smoke: no agent CLIs reachable on PATH"
+if [ "${#reachable[@]}" -eq 0 ]; then
+  echo "live smoke: no reachable agents — nothing to verify (exit 0)"
+  exit 0
 fi
-# Live checks (scoping, argv equivalence, non-mutation, transcript success) are
-# added by the later Phase 2 sub-phases.
+echo "live smoke: reachable agents: ${reachable[*]}"
+# Live checks over ${reachable[@]} (argv equivalence, non-mutation, transcript
+# success) are added by the later Phase 2 sub-phases.
 exit 0
