@@ -1,0 +1,61 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://github.com/eserlxl/external-agents/schema/agents.schema.json",
+  "title": "external-agents agents.json",
+  "description": "Contract for agents.json: the caller picks one effort tier (low|medium|high|xhigh) and each agent's tier maps it to a (model, optional native effort, optional agy-only fallback). Read by scripts/run-agent.sh via jq or python3.",
+  "type": "object",
+  "required": ["default_tier", "agents"],
+  "additionalProperties": false,
+  "properties": {
+    "_comment": {
+      "type": "string",
+      "description": "Free-form documentation; ignored by the driver."
+    },
+    "default_tier": {
+      "type": "string",
+      "description": "Effort tier used when --effort is not passed.",
+      "enum": ["low", "medium", "high", "xhigh"]
+    },
+    "agents": {
+      "type": "object",
+      "description": "Map of agent name (agy|codex|claude|cursor) to its config.",
+      "minProperties": 1,
+      "additionalProperties": {
+        "type": "object",
+        "required": ["enabled", "tiers"],
+        "additionalProperties": false,
+        "properties": {
+          "enabled": {
+            "type": "boolean",
+            "description": "Whether this agent runs under --agent all."
+          },
+          "tiers": {
+            "type": "object",
+            "description": "Map of tier name (low|medium|high|xhigh) to its model selection.",
+            "minProperties": 1,
+            "additionalProperties": {
+              "type": "object",
+              "required": ["model"],
+              "additionalProperties": false,
+              "properties": {
+                "model": {
+                  "type": "string",
+                  "description": "Model id passed to the agent CLI for this tier.",
+                  "minLength": 1
+                },
+                "effort": {
+                  "type": "string",
+                  "description": "Native effort level (codex/claude only); agy/cursor bake the tier into the model name."
+                },
+                "fallback": {
+                  "type": "string",
+                  "description": "Larger-limit model used when the primary's quota is unconfirmed (agy only)."
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}
