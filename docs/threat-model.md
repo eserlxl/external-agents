@@ -43,6 +43,21 @@ A dispatch crosses four boundaries, each less trusted than the last:
 | Secrets in transcripts | A secret-shaped token persists to disk or echoes to stdout | Best-effort, length-bounded redaction of transcript content before it is persisted/echoed (see below) |
 | External provider | The target tree is shipped to a third party that should not see it | The caller chooses `--target`; the docs warn never to point external agents at private IP or secrets, and the containment gate keeps the plugin/parent out of scope |
 
+## Per-CLI read-only enforcement matrix
+
+`--read-only` is enforced unevenly across CLIs. This matrix is the published source of truth that
+Phase 6.4's accuracy test asserts against the driver's resolved read-only argv:
+
+| agent | read-only mechanism | enforcement | source of truth (`scripts/run-agent.sh`) |
+|-------|---------------------|-------------|------------------------------------------|
+| agy    | `--sandbox` | **best-effort** — restricts the terminal but does not hard-block edit tools, so a read-only run *can* still mutate the tree | `:519` (`--sandbox`); runtime NOTE at `:503` |
+| codex  | `-s read-only` | **enforced** | `:537` |
+| claude | `--allowedTools Read Grep Glob` | **enforced** | `:543` |
+| cursor | `--mode plan` | **enforced** (Cursor's no-edit planning mode) | `:553` |
+
+For a hard read-only guarantee, fan out to codex/claude/cursor only, or point `--target` at a
+throwaway copy; the driver prints the best-effort NOTE (`:503`) whenever agy runs read-only.
+
 ## Secret handling and transcript redaction
 
 Agent transcripts can echo secrets that appear in a target tree or in an agent's own output.

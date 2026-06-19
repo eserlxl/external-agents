@@ -43,6 +43,8 @@ mk_restricted_bin() {
 }
 
 echo "== run-agent.sh --dry-run argv resolution (agents.json tier mapping) =="
+# Per-CLI read-only enforcement is published in docs/threat-model.md (agy best-effort via
+# --sandbox vs codex/claude/cursor enforced); Phase 6.4 asserts that matrix against this argv.
 dry "agy read-only -> --sandbox"                 "--sandbox"                     -- --agent agy    --read-only --effort medium
 dry "agy read-only -> mapped Gemini model"       "Gemini 3.5 Flash (Medium)"     -- --agent agy    --read-only --effort medium
 dry "agy write -> skip-permissions"              "--dangerously-skip-permissions" -- --agent agy    --write     --effort medium
