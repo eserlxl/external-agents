@@ -299,6 +299,20 @@ harness — launching real CLIs costs money and ships the tree to third-party pr
 verification must be a **separate, non-required, manual or scheduled** job, never a step added to the
 required check job.
 
+**To opt in:** install (and, for the agents that need it, sign in to) the CLIs you want to verify —
+e.g. `cursor-agent login` — then run `EXTERNAL_AGENTS_LIVE=1 bash tests/live-smoke.sh`. Each line the
+harness prints names exactly why a step ran or was skipped:
+
+- `live smoke skipped (set EXTERNAL_AGENTS_LIVE=1)` — the harness is **not armed** (the default); no
+  live work runs.
+- `<agent> skipped (not reachable on PATH)` — the agent is armed-for but its CLI is not installed, so
+  that agent is skipped (never a failure).
+- `live smoke: reachable agents: …` — the agents that are installed and will be live-verified.
+
+**Secret discipline:** the harness only ever **detects** auth (is the CLI present / does a cheap,
+read-only probe succeed) — it never **captures, prints, or stores** tokens, API keys, or credentials.
+No secret is read into a variable or written to any recorded evidence.
+
 ## Files
 
 ```
