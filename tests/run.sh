@@ -118,6 +118,25 @@ else
   printf '  skip bump-version compute (could not parse current version %s)\n' "$pv"
 fi
 
+echo "== agy quota-aware fallback model pick (--dry-run, stubbed quota) =="
+PRIMARY="Claude Sonnet 4.6 (Thinking)"   # agy 'high' tier primary model
+FALLBACK="Gemini 3.5 Flash (High)"       # agy 'high' tier Gemini fallback
+stub="$(mktemp)"
+# agy_pick JSON -> resolved agy --dry-run argv, with the quota CLI stubbed to emit JSON.
+agy_pick() {
+  printf '%s' "$1" >"$stub"
+  EXTERNAL_AGENTS_AGY_QUOTA_CMD="cat $stub" bash "$RUN" --agent agy --effort high --dry-run --prompt x 2>/dev/null
+}
+assert_contains "agy quota available keeps primary" \
+  "$(agy_pick "{\"models\":[{\"label\":\"$PRIMARY\",\"remainingPercentage\":0.5,\"isExhausted\":false}]}")" "$PRIMARY"
+assert_contains "agy quota exhausted -> fallback" \
+  "$(agy_pick "{\"models\":[{\"label\":\"$PRIMARY\",\"isExhausted\":true}]}")" "$FALLBACK"
+assert_contains "agy label-not-found -> fallback" \
+  "$(agy_pick '{"models":[]}')" "$FALLBACK"
+assert_contains "agy quota CLI unavailable -> fallback" \
+  "$(EXTERNAL_AGENTS_AGY_QUOTA_CMD=false bash "$RUN" --agent agy --effort high --dry-run --prompt x 2>/dev/null)" "$FALLBACK"
+rm -f "$stub"
+
 echo "== shellcheck (regression guard) =="
 if command -v shellcheck >/dev/null 2>&1; then
   if shellcheck "$ROOT/scripts/run-agent.sh" "$ROOT/scripts/bump-version.sh" >/dev/null 2>&1; then
