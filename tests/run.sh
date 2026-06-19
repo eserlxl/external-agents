@@ -418,6 +418,23 @@ bash "$RUN" --conf "$nfx" --agent all --dry-run --prompt x >/dev/null 2>&1
 assert_exit "no enabled agents: --agent all exits 2" 2 "$?"
 rm -f "$mfx" "$sfx" "$nfx"
 
+# Per-fixture degradation parity: each degenerate config must degrade IDENTICALLY across the
+# jq and python3 backends (same --list output), not merely "not crash".
+ddir="$(mktemp -d)"; mk_restricted_bin "$ddir"
+degrade_parity() {  # desc  json
+  local desc="$1" json="$2" f oj op
+  f="$(mktemp)"; printf '%s' "$json" >"$f"
+  oj="$(bash "$RUN" --conf "$f" --list 2>/dev/null)"
+  op="$(PATH="$ddir/bin" "$ddir/bin/bash" "$RUN" --conf "$f" --list 2>/dev/null)"
+  rm -f "$f"
+  if [ "$oj" = "$op" ]; then ok "degrade parity: $desc (jq == python3)"; else bad "degrade parity: $desc" "backends diverged"; fi
+}
+degrade_parity "non-object agent value" '{"default_tier":"medium","agents":{"agy":"oops"}}'
+degrade_parity "non-object tiers"       '{"default_tier":"medium","agents":{"agy":{"enabled":true,"tiers":"oops"}}}'
+degrade_parity "non-string model"       '{"default_tier":"medium","agents":{"agy":{"enabled":true,"tiers":{"low":{"model":5}}}}}'
+degrade_parity "missing tier"           '{"default_tier":"medium","agents":{"agy":{"enabled":true,"tiers":{}}}}'
+rm -rf "$ddir"
+
 echo "== --prompt-file resolution (stdin / file / missing / empty) =="
 # All via --dry-run so no agent launches; the prompt is resolved before the dry-run print.
 pf_stdin="$(printf 'from stdin' | bash "$RUN" --agent codex --dry-run --prompt-file - 2>/dev/null)"; pf_stdin_rc=$?
