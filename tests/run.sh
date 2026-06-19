@@ -74,6 +74,13 @@ assert_exit "unknown --effort tier exits 2" 2 "$?"
 bash "$RUN" --agent codex --target "$ROOT" --prompt x >/dev/null 2>&1
 assert_exit "write into plugin tree exits 2" 2 "$?"
 
+# Write target that *contains* the plugin tree (e.g. a monorepo root) -> also refused,
+# so external agents can't be pointed at sibling repos. Real write mode (no --dry-run).
+bash "$RUN" --agent codex --target "$(dirname "$ROOT")" --prompt x >/dev/null 2>&1
+assert_exit "write target containing the plugin exits 2" 2 "$?"
+cont_err="$(bash "$RUN" --agent codex --target "$(dirname "$ROOT")" --prompt x 2>&1 >/dev/null)"
+assert_contains "containment gate is explained" "$cont_err" "contains the plugin tree"
+
 # Write target outside cwd without --yes -> refused before any launch.
 otherdir="$(mktemp -d)"
 bash "$RUN" --agent codex --target "$otherdir" --prompt x >/dev/null 2>&1
