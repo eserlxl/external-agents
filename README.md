@@ -276,6 +276,19 @@ checks `--list` and per-agent `--dry-run` across both, including malformed-confi
 you add or change a config query type, update **both** backends in `scripts/run-agent.sh` and the
 parity block in `tests/run.sh` together.
 
+### Live smoke (opt-in)
+
+`tests/run.sh` never launches a real CLI. To verify the driver actually round-trips against the
+**real** agents, an opt-in harness lives in `tests/live-smoke.sh`. It is gated behind a single
+arming switch — the `EXTERNAL_AGENTS_LIVE` environment variable (matching the existing
+`EXTERNAL_AGENTS_*` convention) — so it is a no-op by default and is **never** part of the offline
+CI gate:
+
+```bash
+bash tests/live-smoke.sh                 # unset/0 -> skips every live step, exits 0
+EXTERNAL_AGENTS_LIVE=1 bash tests/live-smoke.sh   # 1 -> arms the harness against reachable CLIs
+```
+
 ## Files
 
 ```
