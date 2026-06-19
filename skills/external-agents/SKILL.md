@@ -128,7 +128,10 @@ the resolved tier table, and `--dry-run` to preview the exact argv before a real
 
 The script echoes each agent's full transcript to stdout under a
 `===== <agent> (rc=.. ..s ..bytes) =====` header, and also saves it under
-`~/.external-agents/logs/<project>/<agent>.md`.
+`~/.external-agents/logs/<project>/<agent>.md`. Transcript content is run through a
+**best-effort, length-bounded secret-redaction** stage before it is persisted or echoed (masking
+`sk-`/`gh*_`/`Bearer`/`KEY=`-style tokens as `<REDACTED>`); this is not a guarantee, so do not rely
+on it to scrub a transcript you would otherwise keep private.
 
 - Summarise what each agent concluded or did; on `all`, note where they agree and disagree.
 - **After a read-write run, verify before trusting it:** run `git status` / `git diff` to

@@ -236,6 +236,12 @@ primary **only when quota is positively confirmed available**. If the primary is
   symlinks can't slip past the check.
 - **External providers.** `agy`, `codex`, and `cursor` send the target tree to external
   services — never point them at private IP or secrets.
+- **Transcript redaction (best-effort).** Before a transcript is persisted or echoed, the driver
+  masks secret-shaped tokens (`sk-`/`pk-`, `gh*_`/`github_pat_`, `xox*-`, `AKIA…`, `Bearer`
+  tokens, `KEY=`/`TOKEN=`/`SECRET=`/`PASSWORD=` assignments, and long high-entropy runs) as
+  `<REDACTED>`. This is **length-bounded and best-effort, not a guarantee** of total secret
+  removal — short or unusual secrets can slip through and long non-secret strings can be
+  over-masked, so still treat transcripts as sensitive.
 - **Enforcement is uneven across CLIs** — see the caveats above: agy read-only is
   best-effort; claude write needs `bypassPermissions` for shell; cursor needs prior auth
   (`cursor-agent login`) and its read-only mode (`--mode plan`) is enforced.
