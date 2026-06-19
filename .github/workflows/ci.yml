@@ -19,5 +19,15 @@ jobs:
       - name: Shellcheck the driver scripts
         run: shellcheck scripts/run-agent.sh scripts/bump-version.sh
 
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.x'
+
+      - name: Validate agents.json schema
+        run: |
+          python3 -m pip install --quiet jsonschema
+          python3 -c "import json, jsonschema; jsonschema.validate(json.load(open('agents.json')), json.load(open('schema/agents.schema.json')))"
+
       - name: Run the offline test suite
         run: bash tests/run.sh
