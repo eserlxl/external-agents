@@ -250,6 +250,21 @@ else
   printf '  skip redaction assurance tests (timeout unavailable)\n'
 fi
 
+echo "== redaction no-false-positive assurance (realistic transcript unchanged) =="
+# A realistic agent transcript (function names, file:line refs, a short commit hash, a PR
+# number) must pass through the collect path with nothing masked.
+if command -v timeout >/dev/null 2>&1; then
+  rf="$(mktemp)"
+  REVIEW="Reviewed run-agent.sh:611 build_argv() looks correct; see commit a1b2c3d and PR #42. No issues."
+  na_out="$(run_stub_transcript "$REVIEW" "$rf")"
+  na_file="$(cat "$rf")"; rm -f "$rf"
+  case "$na_out"  in *"<REDACTED>"*) bad "no-false-positive: realistic transcript unchanged (echo)" "over-redacted";; *) ok "no-false-positive: realistic transcript unchanged (echo)";; esac
+  case "$na_file" in *"<REDACTED>"*) bad "no-false-positive: realistic transcript unchanged (persisted)" "over-redacted";; *) ok "no-false-positive: realistic transcript unchanged (persisted)";; esac
+  assert_contains "no-false-positive: review content preserved verbatim" "$na_out" "build_argv() looks correct"
+else
+  printf '  skip redaction no-false-positive assurance (timeout unavailable)\n'
+fi
+
 echo "== bump-version.sh lockstep write (mktemp fixture, real repo untouched) =="
 ft="$(mktemp -d)"
 mkdir -p "$ft/scripts" "$ft/.claude-plugin" "$ft/skills/external-agents"
