@@ -232,6 +232,24 @@ else
   printf '  skip redaction guard tests (timeout unavailable)\n'
 fi
 
+echo "== transcript redaction assurance (both surfaces, mixed token shapes) =="
+# Threat-model assurance distinct from the Phase 1.3 sk- test: a planted Bearer token and a
+# TOKEN= assignment must be masked in BOTH the persisted file and the stdout echo at once.
+if command -v timeout >/dev/null 2>&1; then
+  rf="$(mktemp)"
+  raw_btok="ABCDEFGHIJKLMNOPQRSTUVWXYZ012345"
+  raw_kval="hunter2secretdeploykeyvalue"
+  asr_out="$(run_stub_transcript "auth Bearer $raw_btok and DEPLOY_TOKEN=$raw_kval end" "$rf")"
+  asr_file="$(cat "$rf")"; rm -f "$rf"
+  case "$asr_out"  in *"$raw_btok"*) bad "assurance: Bearer token masked in echo" "leaked to stdout";; *) ok "assurance: Bearer token masked in echo";; esac
+  case "$asr_file" in *"$raw_btok"*) bad "assurance: Bearer token masked in persisted file" "leaked to disk";; *) ok "assurance: Bearer token masked in persisted file";; esac
+  case "$asr_out"  in *"$raw_kval"*) bad "assurance: TOKEN= value masked in echo" "leaked to stdout";; *) ok "assurance: TOKEN= value masked in echo";; esac
+  case "$asr_file" in *"$raw_kval"*) bad "assurance: TOKEN= value masked in persisted file" "leaked to disk";; *) ok "assurance: TOKEN= value masked in persisted file";; esac
+  assert_contains "assurance: placeholder present after masking" "$asr_out" "<REDACTED>"
+else
+  printf '  skip redaction assurance tests (timeout unavailable)\n'
+fi
+
 echo "== bump-version.sh lockstep write (mktemp fixture, real repo untouched) =="
 ft="$(mktemp -d)"
 mkdir -p "$ft/scripts" "$ft/.claude-plugin" "$ft/skills/external-agents"
