@@ -241,7 +241,8 @@ primary **only when quota is positively confirmed available**. If the primary is
   tokens, `KEY=`/`TOKEN=`/`SECRET=`/`PASSWORD=` assignments, and long high-entropy runs) as
   `<REDACTED>`. This is **length-bounded and best-effort, not a guarantee** of total secret
   removal — short or unusual secrets can slip through and long non-secret strings can be
-  over-masked, so still treat transcripts as sensitive.
+  over-masked, so still treat transcripts as sensitive. See
+  [docs/threat-model.md](docs/threat-model.md) for the threat-model entry.
 - **Enforcement is uneven across CLIs** — see the caveats above: agy read-only is
   best-effort; claude write needs `bypassPermissions` for shell; cursor needs prior auth
   (`cursor-agent login`) and its read-only mode (`--mode plan`) is enforced.
