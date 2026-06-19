@@ -4,7 +4,7 @@
 
 [![Claude Code plugin](https://img.shields.io/badge/Claude%20Code-plugin-8A2BE2.svg)](https://docs.claude.com/en/docs/claude-code/overview)
 [![Run external CLIs as sub-agents](https://img.shields.io/badge/dispatch-agy%20%C2%B7%20codex%20%C2%B7%20claude-0A7BBB.svg)](#what-it-drives)
-[![version](https://img.shields.io/badge/version-0.3.0-informational.svg)](.claude-plugin/plugin.json)
+[![version](https://img.shields.io/badge/version-0.4.0-informational.svg)](.claude-plugin/plugin.json)
 [![License: GPL-3.0-or-later](https://img.shields.io/badge/license-GPL--3.0--or--later-blue.svg)](LICENSE)
 
 </div>
@@ -48,7 +48,8 @@ directory pointing here), or symlink it into your plugins directory. Once loaded
   "have the external agents review …", "delegate this to agy");
 - the **`/external-agents`** slash command — explicit dispatch.
 
-Requires `agy`, `codex`, and (for the `claude` agent) `claude` on `PATH`. Check with:
+Requires `agy`, `codex`, and (for the `claude` agent) `claude` on `PATH`, plus `jq`
+**or** `python3` to read `agents.json`. Check with:
 
 ```bash
 bash scripts/run-agent.sh --check
@@ -81,6 +82,9 @@ PROMPT
 # fan out to every enabled agent, read-only
 bash scripts/run-agent.sh --agent all --read-only --prompt "Review this branch; cite file:line."
 
+# pick an effort tier — each agent maps it to its own model + native effort
+bash scripts/run-agent.sh --agent all --effort high --prompt "Refactor the parser."
+
 # preview the exact command without running it
 bash scripts/run-agent.sh --agent agy --dry-run --prompt "..."
 ```
@@ -89,29 +93,59 @@ bash scripts/run-agent.sh --agent agy --dry-run --prompt "..."
 
 | flag | meaning |
 |------|---------|
-| `--agent A` | `agy` \| `codex` \| `claude` \| `all` (all enabled in `agents.conf`) |
+| `--agent A` | `agy` \| `codex` \| `claude` \| `all` (all enabled in `agents.json`) |
 | `--prompt P` / `--prompt-file F` / `--prompt-file -` | the task (literal, file, or stdin) |
 | `--target DIR` | where the agents work (default: cwd) |
 | `--write` / `--read-only` | read-write (default) vs analysis-only (mutually exclusive) |
 | `--yes` / `-y` | confirm a write run whose `--target` is not the current directory |
-| `--model M` / `--effort E` | per-run overrides (else `agents.conf`, else cli default) |
+| `--effort TIER` | effort level / model tier: `low` \| `medium` \| `high` \| `xhigh`. Maps, per agent, to the model + native effort in `agents.json` (optional; blank = config `default_tier`) |
+| `--model M` | model override — wins over the tier's model; native effort still comes from the tier |
 | `--claude-perm MODE` | claude write-mode permission mode (default `acceptEdits`; use `bypassPermissions` for shell) |
 | `--timeout S` | per-agent timeout, seconds (default 1800) |
 | `--out DIR` | transcript dir (default `~/.external-agents/logs/<project>`) |
-| `--conf FILE` | agent defaults (default `agents.conf`) |
-| `--list` / `--check` / `--dry-run` | inspect config / preflight CLIs / preview argv |
+| `--conf FILE` | agent config JSON (default `agents.json`) |
+| `--list` / `--check` / `--dry-run` | inspect config / preflight reader + CLIs / preview argv |
 
-## Configuration — `agents.conf`
+## Configuration — `agents.json`
 
-Per-agent default model and effort, one line each (`agent | model | effort`). Only the
-agents listed here run under `--agent all`. Ships with `agy` + `codex` enabled and `claude`
-commented out:
+The caller picks **one effort level** — `low`, `medium`, `high`, or `xhigh` — and
+`agents.json` maps that tier to the right **model + native effort for each agent**. So a
+single `--effort high` resolves, per agent, to:
 
+| `--effort` | agy (tier baked into model) | codex | claude |
+|------------|-----------------------------|-------|--------|
+| `low`      | `Gemini 3.5 Flash (Low)`    | `gpt-5.5` effort `low`    | `claude-haiku-4-5`  |
+| `medium`   | `Gemini 3.5 Flash (Medium)` | `gpt-5.5` effort `medium` | `claude-sonnet-4-6` |
+| `high`     | `Gemini 3.5 Flash (High)`   | `gpt-5.5` effort `high`   | `claude-opus-4-8` effort `high`  |
+| `xhigh`    | `Gemini 3.1 Pro (High)`     | `gpt-5.5` effort `xhigh`  | `claude-opus-4-8` effort `xhigh` |
+
+`agy` bakes the tier into the model name and ignores a separate effort; `codex`/`claude`
+take model and effort separately. With no `--effort`, the config's `default_tier` is used
+(ships as `xhigh`). A per-run `--model M` overrides only the resolved model — the native
+effort still comes from the tier.
+
+`enabled: true` agents run under `--agent all`; a named `--agent agy|codex|claude` runs even
+if disabled. Ships with `agy` + `codex` enabled and `claude` disabled:
+
+```json
+{
+  "default_tier": "xhigh",
+  "agents": {
+    "agy": {
+      "enabled": true,
+      "tiers": {
+        "low":   { "model": "Gemini 3.5 Flash (Low)" },
+        "xhigh": { "model": "Gemini 3.1 Pro (High)" }
+      }
+    },
+    "codex":  { "enabled": true,  "tiers": { "high": { "model": "gpt-5.5", "effort": "high" } } },
+    "claude": { "enabled": false, "tiers": { "low":  { "model": "claude-haiku-4-5" } } }
+  }
+}
 ```
-agy    | Gemini 3.1 Pro (High) |
-codex  | gpt-5.5               | xhigh
-# claude | claude-opus-4-8     | xhigh
-```
+
+Run `bash scripts/run-agent.sh --list` to print the full resolved table, enabled status,
+and `default_tier`. Reading the JSON needs `jq` (preferred) or `python3` on `PATH`.
 
 ## Safety
 
@@ -138,7 +172,7 @@ codex  | gpt-5.5               | xhigh
 ```
 external-agents/
 ├── .claude-plugin/plugin.json     # plugin manifest
-├── agents.conf                    # per-agent default model/effort
+├── agents.json                    # enabled agents + per-tier model/effort map
 ├── commands/external-agents.md    # /external-agents slash command (thin)
 ├── skills/external-agents/SKILL.md# the natural-language brain
 └── scripts/run-agent.sh           # the deterministic driver (all the logic)

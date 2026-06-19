@@ -1,0 +1,33 @@
+{
+  "_comment": "external-agents config. The caller picks ONE effort level (low|medium|high|xhigh) and each agent's tier maps it to the right (model, native effort). 'enabled' agents run under `--agent all`. With no --effort, default_tier is used. agy bakes the tier into the model name and ignores 'effort'; codex/claude take model + effort separately. Read by scripts/run-agent.sh via jq (preferred) or python3. See README.md.",
+  "default_tier": "xhigh",
+  "agents": {
+    "agy": {
+      "enabled": true,
+      "tiers": {
+        "low":    { "model": "Gemini 3.5 Flash (Low)" },
+        "medium": { "model": "Gemini 3.5 Flash (Medium)" },
+        "high":   { "model": "Gemini 3.5 Flash (High)" },
+        "xhigh":  { "model": "Gemini 3.1 Pro (High)" }
+      }
+    },
+    "codex": {
+      "enabled": true,
+      "tiers": {
+        "low":    { "model": "gpt-5.5", "effort": "low" },
+        "medium": { "model": "gpt-5.5", "effort": "medium" },
+        "high":   { "model": "gpt-5.5", "effort": "high" },
+        "xhigh":  { "model": "gpt-5.5", "effort": "xhigh" }
+      }
+    },
+    "claude": {
+      "enabled": false,
+      "tiers": {
+        "low":    { "model": "claude-haiku-4-5" },
+        "medium": { "model": "claude-sonnet-4-6" },
+        "high":   { "model": "claude-opus-4-8", "effort": "high" },
+        "xhigh":  { "model": "claude-opus-4-8", "effort": "xhigh" }
+      }
+    }
+  }
+}

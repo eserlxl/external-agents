@@ -12,7 +12,7 @@ description: >
 license: GPL-3.0-or-later
 metadata:
   plugin: external-agents
-  version: "0.3.0"
+  version: "0.4.0"
 ---
 
 # external-agents
@@ -33,7 +33,7 @@ transcript. Your job is to (1) read the user's intent, (2) resolve four things �
 
 - Names an agent ("ask **codex**", "have **agy**", "use **claude**") → that agent.
 - "the external agents", "both", "all of them", "fan out", or names two+ agents →
-  `all` (every agent enabled in `agents.conf`, run in parallel).
+  `all` (every agent enabled in `agents.json`, run in parallel).
 - Unspecified → `all` if the user clearly wants breadth/a panel; otherwise ask which one,
   or default to `codex` for a single focused task.
 
@@ -91,18 +91,25 @@ PROMPT
   Review the changes on the current branch for correctness and security. Cite file:line.
   PROMPT
   ```
-- Single write task with a model/effort override:
+- Single write task at a chosen effort tier:
   ```bash
   bash "${CLAUDE_PLUGIN_ROOT}/scripts/run-agent.sh" \
-    --agent agy --model "Gemini 3.1 Pro (High)" --target "$PWD" --prompt-file - <<'PROMPT'
+    --agent agy --effort high --target "$PWD" --prompt-file - <<'PROMPT'
   Implement <X>. Run the tests when done.
   PROMPT
   ```
 
-Other flags: `--model M`, `--effort E`, `--claude-perm MODE` (use `bypassPermissions` for
-claude write tasks needing shell), `--yes` (confirm a non-cwd write target), `--timeout S`,
-`--out DIR`. Run `run-agent.sh --check` to verify the CLIs are installed, `--list` to see
-configured defaults, and `--dry-run` to preview the exact argv before a real run.
+**Effort tier (`--effort`).** The caller picks ONE level — `low | medium | high | xhigh` —
+and `agents.json` maps it, per agent, to the right model + native effort (e.g. `--effort high`
+→ agy `Gemini 3.5 Flash (High)`, codex `gpt-5.5` effort `high`, claude `claude-opus-4-8`
+effort `high`). Choose the tier from the user's intent: quick/cheap scan → `low`/`medium`;
+hard reasoning, security, or architecture → `high`/`xhigh`. Omit `--effort` to use the
+config's `default_tier` (`xhigh`). A `--model M` still overrides the resolved model directly.
+
+Other flags: `--model M`, `--claude-perm MODE` (use `bypassPermissions` for claude write
+tasks needing shell), `--yes` (confirm a non-cwd write target), `--timeout S`, `--out DIR`.
+Run `run-agent.sh --check` to verify the JSON reader + CLIs are installed, `--list` to see
+the resolved tier table, and `--dry-run` to preview the exact argv before a real run.
 
 ## 5. Report back
 

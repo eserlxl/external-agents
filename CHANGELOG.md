@@ -4,6 +4,25 @@ All notable changes to external-agents are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/),
 and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [0.4.0] - 2026-06-19
+
+### Added
+- **Effort tiers.** `--effort low|medium|high|xhigh` is now a single semantic level that
+  maps, per agent, to the right model + native effort: agy bakes the tier into the model
+  (e.g. `Gemini 3.5 Flash (High)`), codex/claude take model + effort separately. With no
+  `--effort`, the config's `default_tier` (ships `xhigh`, reproducing the previous defaults)
+  is used; `--model M` still overrides only the resolved model.
+- `agents.json` config — `enabled` agents plus a per-tier `{model, effort}` map and
+  `default_tier`. Read via `jq` (preferred) or `python3`. `--list` now prints the resolved
+  tier table and enabled status.
+
+### Changed
+- `run-agent.sh` reads its config from JSON; `--conf` now defaults to `agents.json`.
+- `--check` also reports the JSON reader (jq/python3) alongside the agent CLIs.
+
+### Removed
+- `agents.conf` (the pipe-delimited per-agent defaults), replaced by `agents.json`.
+
 ## [0.3.0] - 2026-06-16
 
 ### Changed
