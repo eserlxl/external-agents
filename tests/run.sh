@@ -125,6 +125,18 @@ in_err="$(bash "$RUN" --agent codex --target "$ROOT/scripts" --prompt x 2>&1 >/d
 assert_exit     "write into a plugin subdir exits 2"  2 "$in_rc"
 assert_contains "inside-plugin refusal is explained"  "$in_err" "refusing to write inside the plugin tree"
 
+# A symlink that resolves into the plugin tree must not bypass containment: pwd -P collapses
+# it to the real path before the check (scripts/run-agent.sh resolves TARGET via pwd -P).
+sl="$(mktemp -d)"; ln -s "$ROOT" "$sl/link" 2>/dev/null
+if [ -L "$sl/link" ]; then
+  sl_err="$(bash "$RUN" --agent codex --target "$sl/link" --prompt x 2>&1 >/dev/null)"; sl_rc=$?
+  assert_exit     "symlinked target into the plugin is refused (exit 2)" 2 "$sl_rc"
+  assert_contains "symlink bypass collapsed by pwd -P"                   "$sl_err" "plugin tree"
+else
+  printf '  skip symlink-bypass test (could not create symlink)\n'
+fi
+rm -rf "$sl"
+
 # Write target outside cwd without --yes -> refused before any launch.
 otherdir="$(mktemp -d)"
 bash "$RUN" --agent codex --target "$otherdir" --prompt x >/dev/null 2>&1
