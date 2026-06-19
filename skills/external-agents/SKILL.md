@@ -20,7 +20,11 @@ metadata:
 Hand a task to an **external coding agent** running as its own process, then bring its
 result back. The agents are real CLIs already on the machine:
 
-- **agy** — multi-model agent (Gemini / Claude / GPT-OSS tiers; tier baked into the model name)
+- **agy** — multi-model agent (Gemini / Claude / GPT-OSS tiers; tier baked into the model name).
+  Its `high`/`xhigh` tiers are **quota-aware**: a limited 3rd-party primary (Claude Sonnet/Opus)
+  runs only when `antigravity-usage` confirms remaining quota — else it falls back to a
+  larger-limit Gemini model. Needs the Antigravity IDE open (or `antigravity-usage login`);
+  tell the user this if they want agy's Opus/Sonnet tiers and the run keeps falling back to Gemini.
 - **codex** — OpenAI Codex CLI (`codex exec`)
 - **cursor** — Cursor's headless agent CLI (`cursor-agent`), running Cursor's own models (Composer 2.5)
 - **claude** — a nested Claude Code session (available, not in the default `all` set)
@@ -108,8 +112,9 @@ PROMPT
 
 **Effort tier (`--effort`).** The caller picks ONE level — `low | medium | high | xhigh` —
 and `agents.json` maps it, per agent, to the right model + native effort (e.g. `--effort high`
-→ agy `Gemini 3.5 Flash (High)`, codex `gpt-5.5` effort `high`, claude `claude-opus-4-8`
-effort `high`). Choose the tier from the user's intent: quick/cheap scan → `low`/`medium`;
+→ agy `Claude Sonnet 4.6 (Thinking)` (quota-checked, else Gemini), codex `gpt-5.5` effort
+`high`, claude `claude-opus-4-8` effort `high`, cursor `gpt-5.5-high`). Choose the tier from
+the user's intent: quick/cheap scan → `low`/`medium`;
 hard reasoning, security, or architecture → `high`/`xhigh`. Omit `--effort` to use the
 config's `default_tier` (`medium`). A `--model M` still overrides the resolved model directly.
 

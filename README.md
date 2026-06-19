@@ -57,7 +57,9 @@ directory pointing here), or symlink it into your plugins directory. Once loaded
 
 Requires `agy`, `codex`, the `cursor-agent` CLI (for the `cursor` agent; run
 `cursor-agent login` once), and — for the `claude` agent — `claude` on `PATH`, plus `jq`
-**or** `python3` to read `agents.json`. Check with:
+**or** `python3` to read `agents.json`. Optionally `antigravity-usage`
+(`npm i -g antigravity-usage`) enables agy's [quota-aware fallback](#agy-quota-aware-fallback-antigravity).
+Check with:
 
 ```bash
 bash scripts/run-agent.sh --check
@@ -122,10 +124,14 @@ single `--effort high` resolves, per agent, to:
 
 | `--effort` | agy (tier baked into model) | codex | claude | cursor (tier baked into model) |
 |------------|-----------------------------|-------|--------|--------------------------------|
-| `low`      | `Gemini 3.5 Flash (Low)`    | `gpt-5.5` effort `low`    | `claude-haiku-4-5`  | `gpt-5-mini` |
-| `medium`   | `Gemini 3.5 Flash (Medium)` | `gpt-5.5` effort `medium` | `claude-sonnet-4-6` | `composer-2.5` |
-| `high`     | `Gemini 3.5 Flash (High)`   | `gpt-5.5` effort `high`   | `claude-opus-4-8` effort `high`  | `gpt-5.5-high` |
-| `xhigh`    | `Gemini 3.1 Pro (High)`     | `gpt-5.5` effort `xhigh`  | `claude-opus-4-8` effort `xhigh` | `claude-opus-4-8-thinking-high` |
+| `low`      | `Gemini 3.5 Flash (Low)`        | `gpt-5.5` effort `low`    | `claude-haiku-4-5`  | `gpt-5-mini` |
+| `medium`   | `Gemini 3.5 Flash (Medium)`     | `gpt-5.5` effort `medium` | `claude-sonnet-4-6` | `composer-2.5` |
+| `high`     | `Claude Sonnet 4.6 (Thinking)`† | `gpt-5.5` effort `high`   | `claude-opus-4-8` effort `high`  | `gpt-5.5-high` |
+| `xhigh`    | `Claude Opus 4.6 (Thinking)`†   | `gpt-5.5` effort `xhigh`  | `claude-opus-4-8` effort `xhigh` | `claude-opus-4-8-thinking-high` |
+
+† agy `high`/`xhigh` are **quota-aware**: the limited 3rd-party primary runs only when `antigravity-usage`
+confirms remaining quota; otherwise they fall back to a larger-limit Gemini — `Gemini 3.5 Flash (High)`
+for `high`, `Gemini 3.1 Pro (High)` for `xhigh` (see below).
 
 `agy` and `cursor` bake the tier into the model name and ignore a separate effort;
 `codex`/`claude` take model and effort separately. The cursor tiers form a cheap→premium
@@ -149,7 +155,7 @@ even if disabled. Ships with `agy` + `codex` + `cursor` enabled and `claude` dis
       "enabled": true,
       "tiers": {
         "low":   { "model": "Gemini 3.5 Flash (Low)" },
-        "xhigh": { "model": "Gemini 3.1 Pro (High)" }
+        "xhigh": { "model": "Claude Opus 4.6 (Thinking)", "fallback": "Gemini 3.1 Pro (High)" }
       }
     },
     "codex":  { "enabled": true,  "tiers": { "high":   { "model": "gpt-5.5", "effort": "high" } } },
@@ -161,6 +167,31 @@ even if disabled. Ships with `agy` + `codex` + `cursor` enabled and `claude` dis
 
 Run `bash scripts/run-agent.sh --list` to print the full resolved table, enabled status,
 and `default_tier`. Reading the JSON needs `jq` (preferred) or `python3` on `PATH`.
+
+### agy quota-aware fallback (Antigravity)
+
+`agy` is Google's Antigravity, which gives **large Gemini limits** but **small, precious
+3rd-party limits** (Claude Opus/Sonnet, GPT-OSS). To spend the scarce ones deliberately, an
+`agy` tier may carry a `fallback`:
+
+```json
+"high":  { "model": "Claude Sonnet 4.6 (Thinking)", "fallback": "Gemini 3.5 Flash (High)" },
+"xhigh": { "model": "Claude Opus 4.6 (Thinking)",   "fallback": "Gemini 3.1 Pro (High)" }
+```
+
+Before launching such a tier, `run-agent.sh` consults the free **`antigravity-usage --json`**
+CLI (`npm i -g antigravity-usage`) for the primary model's remaining quota and uses the
+primary **only when quota is positively confirmed available**. If the primary is exhausted
+**or the quota is unconfirmable**, it uses the Gemini `fallback` instead — so scarce 3rd-party
+/ Opus quota is **never spent without a check**. This applies to **agy only**; a per-run
+`--model M` is explicit intent and skips the check.
+
+> **You must open the Antigravity IDE** (or run `antigravity-usage login`) for the quota
+> check to see data. While it can't (IDE closed / `antigravity-usage` not installed), `agy`'s
+> 3rd-party tiers transparently fall back to Gemini. Tune with
+> `EXTERNAL_AGENTS_AGY_MIN_REMAINING` (% remaining below which to fall back; default `5`),
+> `EXTERNAL_AGENTS_AGY_QUOTA_TIMEOUT` (seconds to wait for `antigravity-usage`; default `20`),
+> or `EXTERNAL_AGENTS_AGY_QUOTA_CMD` (override the quota command).
 
 ## Safety
 

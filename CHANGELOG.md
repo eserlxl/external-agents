@@ -19,6 +19,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   `cursor` (the IDE); `--check` resolves and reports the correct binary. Requires
   `cursor-agent login` (or `CURSOR_API_KEY`).
 
+- **agy quota-aware fallback.** An `agy` tier may declare a `fallback` model. Before launching
+  such a tier, `run-agent.sh` consults the free `antigravity-usage --json` CLI for the primary
+  model's remaining Antigravity quota and uses the primary **only when it is confirmed
+  available**; if it is exhausted **or unconfirmable** (Antigravity IDE closed / not logged in /
+  CLI absent), the larger-limit Gemini `fallback` runs instead — so scarce 3rd-party / Opus
+  quota is never spent without a positive check. agy-only; a `--model` override skips it. The
+  default agy ladder now uses `Claude Sonnet 4.6 (Thinking)` (high) and `Claude Opus 4.6
+  (Thinking)` (xhigh), falling back to `Gemini 3.5 Flash (High)` and `Gemini 3.1 Pro (High)`
+  respectively. Tunable via `EXTERNAL_AGENTS_AGY_MIN_REMAINING` /
+  `EXTERNAL_AGENTS_AGY_QUOTA_TIMEOUT` / `EXTERNAL_AGENTS_AGY_QUOTA_CMD`. `--list` shows the
+  fallback; `--check` reports whether `antigravity-usage` is on `PATH`.
+
 ### Changed
 - `default_tier` is now `medium` (was `xhigh`), so a run with no `--effort` resolves to each
   agent's mid tier — cheaper by default. Pass `--effort xhigh` (or set `default_tier` back) for

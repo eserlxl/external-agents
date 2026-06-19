@@ -40,13 +40,21 @@
 # EFFORT TIERS.  The caller picks ONE semantic effort level — low | medium | high |
 # xhigh — and agents.json maps that tier to the right (model, native effort) for
 # EACH agent. So a single `--effort high` resolves, per agent, to e.g.:
-#     agy    -> Gemini 3.5 Flash (High)              (agy bakes the tier into the model)
+#     agy    -> Claude Sonnet 4.6 (Thinking)         (agy bakes the tier into the model; quota-checked)
 #     codex  -> gpt-5.5   model_reasoning_effort=high
 #     claude -> claude-opus-4-8   --effort high
 #     cursor -> composer-2.5                         (cursor bakes the tier into the model)
 # With no --effort the config's default_tier is used. A per-run --model overrides
 # only the resolved model; the native effort still comes from the tier. Reading
 # agents.json needs `jq` (preferred) or `python3` on PATH.
+#
+# AGY QUOTA-AWARE FALLBACK.  An agy tier may add a "fallback" model: its limited
+# 3rd-party primary (e.g. Claude Opus 4.6 (Thinking)) is used ONLY when the free
+# `antigravity-usage --json` CLI confirms remaining quota; if it is exhausted OR
+# unconfirmable (Antigravity IDE closed / not logged in), the larger-limit Gemini
+# fallback is used instead — so scarce 3rd-party / Opus quota is never spent without a
+# positive check. agy-only; a per-run --model override skips it. Open the Antigravity
+# IDE (or run `antigravity-usage login`) to enable the 3rd-party tiers.
 #
 # Usage:
 #   run-agent.sh --agent <agy|codex|claude|cursor|all> (--prompt "..." | --prompt-file F | --prompt-file -)
@@ -154,8 +162,9 @@ done
 #   enabled                 -> newline list of enabled agent names
 #   tiers  <agent>          -> newline list of that agent's tier names
 #   all_tiers               -> newline union of every agent's tier names (first-seen order)
-#   model  <agent> <tier>   -> model string  (empty if unset / tier absent)
-#   effort <agent> <tier>   -> effort string (empty if unset / tier absent)
+#   model    <agent> <tier> -> model string    (empty if unset / tier absent)
+#   effort   <agent> <tier> -> effort string   (empty if unset / tier absent)
+#   fallback <agent> <tier> -> fallback model  (empty if unset; agy quota-aware backup)
 JSON_BACKEND=""
 if command -v jq >/dev/null 2>&1; then JSON_BACKEND="jq"
 elif command -v python3 >/dev/null 2>&1; then JSON_BACKEND="py"; fi
@@ -175,6 +184,7 @@ cfg_jq() {
     all_tiers)    jq -r '[ (.agents // {}) | (if type=="object" then .[] else empty end) | (if type=="object" then (if (.tiers|type)=="object" then (.tiers|keys_unsorted[]) else empty end) else empty end) ] | reduce .[] as $x ([]; if any(.[]; . == $x) then . else . + [$x] end) | .[]' "$CONF";;
     model)        jq -r --arg a "$a" --arg t "$t" '(.agents // {})[$a] as $v | if ($v|type)!="object" then empty elif ($v.tiers|type)!="object" then empty elif ($v.tiers[$t]|type)!="object" then empty else ($v.tiers[$t].model|strings) end' "$CONF";;
     effort)       jq -r --arg a "$a" --arg t "$t" '(.agents // {})[$a] as $v | if ($v|type)!="object" then empty elif ($v.tiers|type)!="object" then empty elif ($v.tiers[$t]|type)!="object" then empty else ($v.tiers[$t].effort|strings) end' "$CONF";;
+    fallback)     jq -r --arg a "$a" --arg t "$t" '(.agents // {})[$a] as $v | if ($v|type)!="object" then empty elif ($v.tiers|type)!="object" then empty elif ($v.tiers[$t]|type)!="object" then empty else ($v.tiers[$t].fallback|strings) end' "$CONF";;
     *)            return 2;;
   esac
 }
@@ -239,6 +249,8 @@ elif op == "model":
     out = [strval(tier(a, t).get("model"))]
 elif op == "effort":
     out = [strval(tier(a, t).get("effort"))]
+elif op == "fallback":
+    out = [strval(tier(a, t).get("fallback"))]
 else:
     sys.exit(2)
 sys.stdout.write("\n".join(out))
@@ -258,6 +270,53 @@ cfg() {
 # The CLI binary an agent name maps to. Identical to the name for agy/codex/claude;
 # the cursor agent's binary is `cursor-agent` (NOT `cursor`, which is the IDE).
 agent_bin() { case "$1" in cursor) printf 'cursor-agent';; *) printf '%s' "$1";; esac; }
+
+# --- agy quota-aware fallback -----------------------------------------------------
+# agy is Google's Antigravity. Bare `agy` has no scriptable quota, but the free CLI
+# `antigravity-usage --json` (npm i -g antigravity-usage; the same tool council uses)
+# reports per-model `remainingPercentage` (0..1) + `isExhausted`, keyed by the exact
+# `agy models` label. It needs the Antigravity IDE open (or `antigravity-usage login`).
+# Read-only — we never call the quota-spending `wakeup`.
+#
+# agy_model_status <model-label> -> available | exhausted | unknown
+#   available : antigravity confirms remaining quota >= AGY_MIN_REMAINING %
+#   exhausted : isExhausted, or remaining below the threshold
+#   unknown   : CLI absent / IDE closed / unauthenticated / unparseable
+# The caller treats anything other than "available" as a reason to use the fallback,
+# so scarce 3rd-party / Opus quota is never spent without a positive confirmation.
+AGY_QUOTA_CMD="${EXTERNAL_AGENTS_AGY_QUOTA_CMD:-antigravity-usage --json}"
+AGY_QUOTA_TIMEOUT="${EXTERNAL_AGENTS_AGY_QUOTA_TIMEOUT:-20}"
+AGY_MIN_REMAINING="${EXTERNAL_AGENTS_AGY_MIN_REMAINING:-5}"   # % remaining below which we fall back
+agy_model_status() {  # <model-label>
+  command -v python3 >/dev/null 2>&1 || { printf 'unknown'; return; }
+  local out
+  # shellcheck disable=SC2086 # AGY_QUOTA_CMD is "cmd + flags"; intentional word-split.
+  out="$(timeout "$AGY_QUOTA_TIMEOUT" $AGY_QUOTA_CMD 2>/dev/null)" || { printf 'unknown'; return; }
+  [ -n "$out" ] || { printf 'unknown'; return; }
+  # Pass the JSON via env, NOT stdin: `python3 - <<'PY'` already consumes stdin for the
+  # program, so json.load(sys.stdin) would read the (exhausted) heredoc, not the data.
+  AGY_QUOTA_JSON="$out" python3 - "$1" "$AGY_MIN_REMAINING" <<'PY'
+import json, os, sys
+label, thr = sys.argv[1], float(sys.argv[2])
+try:
+    data = json.loads(os.environ.get("AGY_QUOTA_JSON", ""))
+except Exception:
+    print("unknown"); raise SystemExit
+if not isinstance(data, dict):
+    print("unknown"); raise SystemExit
+for m in data.get("models", []):
+    if isinstance(m, dict) and m.get("label") == label:
+        if m.get("isExhausted"):
+            print("exhausted"); raise SystemExit
+        rp = m.get("remainingPercentage")
+        if isinstance(rp, bool) or not isinstance(rp, (int, float)):
+            # Label found but no usable number is NOT positive confirmation of remaining
+            # quota -> treat as unknown so the caller falls back (never spend Opus blind).
+            print("unknown"); raise SystemExit
+        print("exhausted" if rp * 100 < thr else "available"); raise SystemExit
+print("unknown")  # label not found in the antigravity output
+PY
+}
 
 # Why the configured agents.json can't be read, or "" if it's fine.
 conf_problem() {
@@ -303,6 +362,18 @@ if [ "$CHECK" = "1" ]; then
       printf '  MISS %-7s not on PATH\n' "$a"; missing=$((missing + 1))
     fi
   done
+  # antigravity-usage powers agy's quota-aware fallback. Optional/info-only: when absent
+  # or the IDE is closed, agy's 3rd-party tiers simply fall back to their Gemini backup.
+  case " ${cand[*]} " in
+    *" agy "*)
+      # Probe via PATH only, exactly as the runtime quota call resolves AGY_QUOTA_CMD —
+      # a binary in ~/.local/bin but off PATH is unreachable at run time, so don't claim it.
+      if command -v antigravity-usage >/dev/null 2>&1; then
+        printf '  info agy-qta antigravity-usage present (agy 3rd-party fallback active; needs Antigravity IDE open / login)\n'
+      else
+        printf '  info agy-qta antigravity-usage not on PATH — agy high/xhigh always use the Gemini fallback (npm i -g antigravity-usage)\n'
+      fi;;
+  esac
   echo "external-agents: $missing missing"
   [ "$missing" -eq 0 ]; exit $?
 fi
@@ -323,9 +394,10 @@ if [ "$LIST" = "1" ]; then
     printf '  %-7s [%s]\n' "$a" "$en"
     while IFS= read -r t; do
       [ -n "$t" ] || continue
-      mm="$(cfg model "$a" "$t")"; ee="$(cfg effort "$a" "$t")"
-      if [ -n "$ee" ]; then printf '    %-7s -> %-28s effort=%s\n' "$t" "${mm:-(cli default)}" "$ee"
-      else                  printf '    %-7s -> %s\n' "$t" "${mm:-(cli default)}"; fi
+      mm="$(cfg model "$a" "$t")"; ee="$(cfg effort "$a" "$t")"; fbl="$(cfg fallback "$a" "$t")"
+      disp="${mm:-(cli default)}"; [ -n "$fbl" ] && disp="$disp  (fallback: $fbl)"
+      if [ -n "$ee" ]; then printf '    %-7s -> %-28s effort=%s\n' "$t" "$disp" "$ee"
+      else                  printf '    %-7s -> %s\n' "$t" "$disp"; fi
     done < <(cfg tiers "$a")
   done < <(cfg agents)
   [ "$any" = "1" ] || echo "  (no agents configured)"
@@ -417,7 +489,7 @@ fi
 
 # --- build one agent's argv  (model/effort resolved from the tier) ----------------
 build_argv() {  # agent ; sets global ARGV[]
-  local a="$1" m e
+  local a="$1" m e fb st
   m="${MODEL:-$(cfg model "$a" "$TIER")}"
   e="$(cfg effort "$a" "$TIER")"
   ARGV=()
@@ -425,6 +497,21 @@ build_argv() {  # agent ; sets global ARGV[]
     agy)
       ARGV=(agy -p "$PROMPT" --add-dir "$TARGET"); PROMPT_IDX=2
       [ "$MODE" = "readonly" ] && ARGV+=(--sandbox) || ARGV+=(--dangerously-skip-permissions)
+      # Quota-aware model pick: a tier with a 'fallback' names a (limited) 3rd-party
+      # primary + a larger-limit Gemini backup. Consult antigravity-usage and use the
+      # primary ONLY when its quota is positively confirmed available; on exhausted OR
+      # unknown (IDE closed / antigravity-usage unavailable) drop to the fallback, so
+      # scarce 3rd-party / Opus quota is never spent unconfirmed. A --model override
+      # is explicit intent and skips the check.
+      fb="$(cfg fallback "$a" "$TIER")"
+      if [ -z "$MODEL" ] && [ -n "$m" ] && [ -n "$fb" ]; then
+        st="$(agy_model_status "$m")"
+        case "$st" in
+          available) ;;
+          unknown) echo "run-agent: NOTE — agy quota for '$m' is unknown (open the Antigravity IDE or run 'antigravity-usage login' to enable it); using fallback '$fb'." >&2; m="$fb";;
+          *)       echo "run-agent: NOTE — agy '$m' is $st per antigravity-usage; using fallback '$fb'." >&2; m="$fb";;
+        esac
+      fi
       [ -n "$m" ] && ARGV+=(--model "$m");;
     codex)
       if [ "$MODE" = "readonly" ]; then ARGV=(codex exec -s read-only -C "$TARGET" --skip-git-repo-check)
@@ -484,7 +571,12 @@ fi
 echo "external-agents: $AGENT on $PROJECT ($TARGET)  mode=$MODE  tier=${TIER:-(none)}  timeout=${TIMEOUT}s" >&2
 PIDS=()
 for a in "${RUN[@]}"; do
-  printf '  -> %-7s model=%-26s effort=%s\n' "$a" "${MODEL:-$(cfg model "$a" "$TIER")}" "$(cfg effort "$a" "$TIER")" >&2
+  bmodel="${MODEL:-$(cfg model "$a" "$TIER")}"
+  # agy tiers with a fallback resolve their model at launch via the quota check, so the
+  # primary shown here may be swapped for the Gemini fallback — mark it (build_argv's NOTE
+  # reports the actual pick). Skip the marker when --model pins the model explicitly.
+  [ "$a" = "agy" ] && [ -z "$MODEL" ] && [ -n "$(cfg fallback "$a" "$TIER")" ] && bmodel="$bmodel (quota-checked)"
+  printf '  -> %-7s model=%-26s effort=%s\n' "$a" "$bmodel" "$(cfg effort "$a" "$TIER")" >&2
   run_one "$a" & PIDS+=($!)
 done
 for p in "${PIDS[@]}"; do wait "$p"; done
