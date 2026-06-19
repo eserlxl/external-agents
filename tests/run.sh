@@ -231,6 +231,21 @@ mx_err="$(bash "$RUN" --agent codex --write --read-only --dry-run --prompt x 2>&
 assert_exit     "--write then --read-only exits 2"    2 "$mx_rc"
 assert_contains "mutual-exclusion error is explained" "$mx_err" "mutually exclusive"
 
+echo "== bump-version.sh relative bump from a pre-release current version =="
+# Exercises the suffix-stripping branch: a relative bump must strip the -rc/+meta
+# suffix off the current version before incrementing (instead of crashing on split).
+prf="$(mktemp -d)"
+mkdir -p "$prf/scripts" "$prf/.claude-plugin"
+cp "$ROOT/scripts/bump-version.sh" "$prf/scripts/"
+cp "$ROOT/CHANGELOG.md" "$ROOT/README.md" "$prf/"
+printf '%s\n' '{"name":"external-agents","version":"2.0.0-rc.1"}' >"$prf/.claude-plugin/plugin.json"
+# ALLOW_DIRTY=1 so the dirty-tree guard self-skips wherever mktemp lands; --dry-run writes nothing.
+assert_contains "bump patch from 2.0.0-rc.1 -> 2.0.1" \
+  "$(ALLOW_DIRTY=1 bash "$prf/scripts/bump-version.sh" patch --dry-run 2>/dev/null)" "-> 2.0.1"
+assert_contains "bump minor from 2.0.0-rc.1 -> 2.1.0" \
+  "$(ALLOW_DIRTY=1 bash "$prf/scripts/bump-version.sh" minor --dry-run 2>/dev/null)" "-> 2.1.0"
+rm -rf "$prf"
+
 echo "== shellcheck (regression guard) =="
 if command -v shellcheck >/dev/null 2>&1; then
   if shellcheck "$ROOT/scripts/run-agent.sh" "$ROOT/scripts/bump-version.sh" >/dev/null 2>&1; then
