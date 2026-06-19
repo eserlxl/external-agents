@@ -217,6 +217,21 @@ else
   printf '  skip redaction tests (timeout unavailable)\n'
 fi
 
+echo "== redaction false-positive guard (ordinary content survives) =="
+if command -v timeout >/dev/null 2>&1; then
+  rf="$(mktemp)"
+  PROSE="the quick brown fox v0.6.0 sk-short reads files and exits 0 cleanly"
+  fp_out="$(run_stub_transcript "$PROSE" "$rf")"
+  fp_file="$(cat "$rf")"; rm -f "$rf"
+  case "$fp_out"  in *"<REDACTED>"*) bad "guard: ordinary prose not over-redacted (echo)" "redaction fired on safe text";; *) ok "guard: ordinary prose not over-redacted (echo)";; esac
+  assert_contains "guard: ordinary words pass through unchanged" "$fp_out" "the quick brown fox"
+  assert_contains "guard: short token sk-short survives (length-bounded)" "$fp_out" "sk-short"
+  assert_contains "guard: version string survives" "$fp_out" "v0.6.0"
+  case "$fp_file" in *"<REDACTED>"*) bad "guard: ordinary content not over-redacted (persisted)" "redaction fired on disk";; *) ok "guard: ordinary content not over-redacted (persisted)";; esac
+else
+  printf '  skip redaction guard tests (timeout unavailable)\n'
+fi
+
 echo "== bump-version.sh lockstep write (mktemp fixture, real repo untouched) =="
 ft="$(mktemp -d)"
 mkdir -p "$ft/scripts" "$ft/.claude-plugin" "$ft/skills/external-agents"
