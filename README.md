@@ -231,9 +231,12 @@ bash tests/run.sh
 
 ```
 external-agents/
-├── .claude-plugin/plugin.json     # plugin manifest
-├── agents.json                    # enabled agents + per-tier model/effort map
-├── commands/external-agents.md    # /external-agents slash command (thin)
-├── skills/external-agents/SKILL.md# the natural-language brain
-└── scripts/run-agent.sh           # the deterministic driver (all the logic)
+├── .claude-plugin/plugin.json      # plugin manifest
+├── agents.json                     # enabled agents + per-tier model/effort map
+├── commands/external-agents.md     # /external-agents slash command (thin)
+├── skills/external-agents/SKILL.md # the natural-language brain
+├── scripts/run-agent.sh            # the deterministic driver (all the logic)
+├── scripts/bump-version.sh         # lockstep version bumper
+├── tests/run.sh                    # offline test suite (run-agent + bump-version)
+└── .github/workflows/ci.yml        # CI: shellcheck + tests on push/PR
 ```
