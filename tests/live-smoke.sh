@@ -30,7 +30,21 @@ RUN="$ROOT/scripts/run-agent.sh"
 [ -x "$RUN" ] || { echo "live smoke: driver not found at $RUN" >&2; exit 1; }
 
 echo "external-agents live smoke: armed (EXTERNAL_AGENTS_LIVE=1)"
-# Live checks (agent discovery, scoping, argv equivalence, non-mutation,
-# transcript success) are added by the later Phase 2 sub-phases. Until then an
-# armed run simply confirms the driver is present and exits cleanly.
+
+# discover_reachable — print the agent names whose CLI is on PATH, one per line.
+# Delegates to the driver's machine-readable --discover surface (built from the same
+# agent_bin/command -v probe as --check), so the harness scopes itself to the
+# installed set without re-implementing detection. Auth is verified later, live.
+discover_reachable() {
+  "$RUN" --discover 2>/dev/null | awk '$2 == "present" { print $1 }'
+}
+
+reachable="$(discover_reachable)"
+if [ -n "$reachable" ]; then
+  echo "live smoke: reachable agents: $(printf '%s' "$reachable" | tr '\n' ' ')"
+else
+  echo "live smoke: no agent CLIs reachable on PATH"
+fi
+# Live checks (scoping, argv equivalence, non-mutation, transcript success) are
+# added by the later Phase 2 sub-phases.
 exit 0

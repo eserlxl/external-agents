@@ -60,7 +60,7 @@
 #   run-agent.sh --agent <agy|codex|claude|cursor|all> (--prompt "..." | --prompt-file F | --prompt-file -)
 #                [--target DIR] [--read-only | --write] [--effort TIER] [--model M]
 #                [--claude-perm MODE] [--timeout SECS] [--out DIR] [--conf FILE]
-#                [--list] [--check] [--dry-run] [-h | --help]
+#                [--list] [--check] [--discover] [--dry-run] [-h | --help]
 #
 # --agent all  fans out to every agent ENABLED in agents.json, in parallel.
 # Transcripts land under --out (default ~/.external-agents/logs/<project>/<agent>.md)
@@ -90,6 +90,7 @@ TIMEOUT=1800
 YES=0
 LIST=0
 CHECK=0
+DISCOVER=0
 DRYRUN=0
 VERSION=0
 
@@ -120,6 +121,7 @@ Usage:
   --conf FILE   agent config JSON (default: <plugin>/agents.json)
   --list        print the parsed agent config (tiers + enabled) and exit
   --check       preflight: report the JSON reader and whether each candidate CLI is on PATH
+  --discover    print one machine-readable line per agent: "<a> <present|missing> <bin>"
   --dry-run     print each agent's resolved launch argv without running it
   --version, -V print the external-agents plugin version and exit
   --yes, -y     confirm a write run whose --target is not the current directory
@@ -150,6 +152,7 @@ while [ $# -gt 0 ]; do
     --conf) CONF="$2"; shift 2;;
     --list) LIST=1; shift;;
     --check) CHECK=1; shift;;
+    --discover) DISCOVER=1; shift;;
     -y|--yes) YES=1; shift;;
     --dry-run) DRYRUN=1; shift;;
     --version|-V) VERSION=1; shift;;
@@ -389,6 +392,30 @@ if [ "$CHECK" = "1" ]; then
   esac
   echo "external-agents: $missing missing"
   [ "$missing" -eq 0 ]; exit $?
+fi
+
+# --- discovery (--discover): machine-readable reachable-agent set for a harness ---
+# Like --check, but emits ONE parseable line per candidate agent so a caller (e.g.
+# tests/live-smoke.sh) can scope itself to the installed set without parsing the
+# human-readable preflight. Format:  "<agent> <present|missing> <bin-or-path>".
+# Presence (command -v via agent_bin) is the cheap, offline signal; live auth is left
+# to the harness. Config-independent, like --check, so it never needs agents.json.
+if [ "$DISCOVER" = "1" ]; then
+  case "$AGENT" in
+    agy|codex|claude|cursor) dcand=("$AGENT");;
+    *)                       dcand=(agy codex claude cursor);;   # 'all' or unset -> every known cli
+  esac
+  dseen=""
+  for a in "${dcand[@]}"; do
+    case ",$dseen," in *",$a,"*) continue;; esac; dseen="$dseen,$a"
+    bin="$(agent_bin "$a")"
+    if command -v "$bin" >/dev/null 2>&1; then
+      printf '%s present %s\n' "$a" "$(command -v "$bin")"
+    else
+      printf '%s missing %s\n' "$a" "$bin"
+    fi
+  done
+  exit 0
 fi
 
 # Everything past here needs a readable agents.json.

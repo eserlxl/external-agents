@@ -389,6 +389,21 @@ assert_contains "--check prints the preflight header"        "$chk_out" "externa
 assert_contains "--check probes cursor as the cursor-agent binary" "$chk_out" "need cursor-agent on PATH"
 assert_exit     "--check exits non-zero when agent CLIs are missing" 1 "$chk_rc"
 
+echo "== --discover machine-readable reachable-agent set (restricted PATH) =="
+# The live-smoke harness scopes itself to installed agents via run-agent.sh --discover.
+# Under a restricted PATH with NO agent CLIs, every candidate must report 'missing' in
+# the documented "<agent> present|missing <bin>" shape, and the call must stay offline.
+disc_dir="$(mktemp -d)"
+mk_restricted_bin "$disc_dir"
+disc_out="$(PATH="$disc_dir/bin" "$disc_dir/bin/bash" "$RUN" --discover 2>/dev/null)"; disc_rc=$?
+rm -rf "$disc_dir"
+assert_exit     "--discover exits 0"                            0 "$disc_rc"
+assert_contains "--discover reports agy missing"                "$disc_out" "agy missing"
+assert_contains "--discover names cursor's cursor-agent binary" "$disc_out" "cursor missing cursor-agent"
+# Shape: exactly one '<agent> present|missing <bin>' line per known agent (4).
+disc_lines="$(printf '%s\n' "$disc_out" | grep -cE '^(agy|codex|claude|cursor) (present|missing) ')"
+assert_exit     "--discover emits one shaped line per agent (4)" 4 "$disc_lines"
+
 echo "== agents.json malformed-config resilience (degrade, never crash) =="
 # (1) Hard-malformed: "agents" is an array, not an object -> rejected with a clear
 #     message and exit 2 (conf_problem) before any agent is resolved.
