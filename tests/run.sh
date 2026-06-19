@@ -74,6 +74,24 @@ else
   printf '  skip jq/python3 parity (could not run both backends in this environment)\n'
 fi
 
+echo "== agents.json schema validation (draft-07 contract) =="
+if python3 -c 'import jsonschema' 2>/dev/null; then
+  # schema_check FILE -> "OK" if FILE validates against schema/agents.schema.json, else "REJECTED".
+  schema_check() {
+    python3 - "$ROOT/schema/agents.schema.json" "$1" <<'PY' 2>/dev/null
+import json, sys, jsonschema
+schema = json.load(open(sys.argv[1])); cfg = json.load(open(sys.argv[2]))
+try:
+    jsonschema.validate(cfg, schema); print("OK")
+except jsonschema.ValidationError:
+    print("REJECTED")
+PY
+  }
+  assert_contains "shipped agents.json validates against the schema" "$(schema_check "$ROOT/agents.json")" "OK"
+else
+  printf '  skip schema validation (python3 jsonschema not installed)\n'
+fi
+
 echo "== effort + write-mode safety gates (early exit, no agent launched) =="
 bash "$RUN" --agent codex --effort bogus --dry-run --prompt x >/dev/null 2>&1
 assert_exit "unknown --effort tier exits 2" 2 "$?"
