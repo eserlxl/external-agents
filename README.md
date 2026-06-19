@@ -123,27 +123,27 @@ single `--effort high` resolves, per agent, to:
 | `--effort` | agy (tier baked into model) | codex | claude | cursor (tier baked into model) |
 |------------|-----------------------------|-------|--------|--------------------------------|
 | `low`      | `Gemini 3.5 Flash (Low)`    | `gpt-5.5` effort `low`    | `claude-haiku-4-5`  | `gpt-5-mini` |
-| `medium`   | `Gemini 3.5 Flash (Medium)` | `gpt-5.5` effort `medium` | `claude-sonnet-4-6` | `auto` (Cursor's router picks) |
-| `high`     | `Gemini 3.5 Flash (High)`   | `gpt-5.5` effort `high`   | `claude-opus-4-8` effort `high`  | `kimi-k2.5` |
-| `xhigh`    | `Gemini 3.1 Pro (High)`     | `gpt-5.5` effort `xhigh`  | `claude-opus-4-8` effort `xhigh` | `composer-2.5` |
+| `medium`   | `Gemini 3.5 Flash (Medium)` | `gpt-5.5` effort `medium` | `claude-sonnet-4-6` | `composer-2.5` |
+| `high`     | `Gemini 3.5 Flash (High)`   | `gpt-5.5` effort `high`   | `claude-opus-4-8` effort `high`  | `gpt-5.5-high` |
+| `xhigh`    | `Gemini 3.1 Pro (High)`     | `gpt-5.5` effort `xhigh`  | `claude-opus-4-8` effort `xhigh` | `claude-opus-4-8-thinking-high` |
 
 `agy` and `cursor` bake the tier into the model name and ignore a separate effort;
-`codex`/`claude` take model and effort separately. The cursor tiers map to a different
-Cursor-served model per level — `gpt-5-mini` (low), `auto` (medium — Cursor's router picks
-per task, so medium is non-deterministic), `kimi-k2.5` (high), `composer-2.5` (xhigh). All
-are **non-fast** ids on purpose: Cursor's CLI default is a `-fast` variant (e.g.
+`codex`/`claude` take model and effort separately. The cursor tiers form a cheap→premium
+ladder — `gpt-5-mini` (low), `composer-2.5` (medium, Cursor's agentic workhorse),
+`gpt-5.5-high` (high), `claude-opus-4-8-thinking-high` (xhigh). All are **non-fast**,
+ZDR-respecting ids on purpose: Cursor's CLI default is a `-fast` variant (e.g.
 `composer-2.5-fast`), which spends fast/priority requests — keep the plain ids, or switch a
-tier to a `-fast` model if you do want priority routing. Run `cursor-agent models` (once
-signed in) to see every id your account exposes. With no
-`--effort`, the config's `default_tier` is used (ships as `xhigh`). A per-run `--model M`
-overrides only the resolved model — the native effort still comes from the tier.
+tier to a `-fast` model if you do want priority routing. (Avoid the `claude-fable-5-*` ids:
+they are marked **NO ZDR**.) Run `cursor-agent models` (once signed in) to see every id your
+account exposes. With no `--effort`, the config's `default_tier` is used (ships as `medium`).
+A per-run `--model M` overrides only the resolved model — the native effort still comes from the tier.
 
 `enabled: true` agents run under `--agent all`; a named `--agent agy|codex|claude|cursor` runs
 even if disabled. Ships with `agy` + `codex` + `cursor` enabled and `claude` disabled:
 
 ```json
 {
-  "default_tier": "xhigh",
+  "default_tier": "medium",
   "agents": {
     "agy": {
       "enabled": true,
@@ -152,9 +152,9 @@ even if disabled. Ships with `agy` + `codex` + `cursor` enabled and `claude` dis
         "xhigh": { "model": "Gemini 3.1 Pro (High)" }
       }
     },
-    "codex":  { "enabled": true,  "tiers": { "high": { "model": "gpt-5.5", "effort": "high" } } },
-    "claude": { "enabled": false, "tiers": { "low":  { "model": "claude-haiku-4-5" } } },
-    "cursor": { "enabled": true,  "tiers": { "xhigh": { "model": "composer-2.5" } } }
+    "codex":  { "enabled": true,  "tiers": { "high":   { "model": "gpt-5.5", "effort": "high" } } },
+    "claude": { "enabled": false, "tiers": { "low":    { "model": "claude-haiku-4-5" } } },
+    "cursor": { "enabled": true,  "tiers": { "medium": { "model": "composer-2.5" } } }
   }
 }
 ```

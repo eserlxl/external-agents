@@ -111,7 +111,7 @@ and `agents.json` maps it, per agent, to the right model + native effort (e.g. `
 → agy `Gemini 3.5 Flash (High)`, codex `gpt-5.5` effort `high`, claude `claude-opus-4-8`
 effort `high`). Choose the tier from the user's intent: quick/cheap scan → `low`/`medium`;
 hard reasoning, security, or architecture → `high`/`xhigh`. Omit `--effort` to use the
-config's `default_tier` (`xhigh`). A `--model M` still overrides the resolved model directly.
+config's `default_tier` (`medium`). A `--model M` still overrides the resolved model directly.
 
 Other flags: `--model M`, `--claude-perm MODE` (use `bypassPermissions` for claude write
 tasks needing shell), `--yes` (confirm a non-cwd write target), `--timeout S`, `--out DIR`.
