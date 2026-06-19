@@ -99,6 +99,24 @@ else
   printf '  skip jq/python3 parity (could not run both backends in this environment)\n'
 fi
 
+echo "== per-agent jq/python3 dry-run parity (model/effort/fallback ops under both backends) =="
+pdir="$(mktemp -d)"; mk_restricted_bin "$pdir"
+parity_dry() {  # agent  effort  [extra env assignment]
+  local a="$1" e="$2" env="${3:-}" oj op
+  oj="$(env ${env:+$env} bash "$RUN" --agent "$a" --read-only --effort "$e" --dry-run --prompt p 2>/dev/null)"
+  op="$(env ${env:+$env} PATH="$pdir/bin" "$pdir/bin/bash" "$RUN" --agent "$a" --read-only --effort "$e" --dry-run --prompt p 2>/dev/null)"
+  if [ -z "$oj" ] || [ -z "$op" ]; then printf '  skip %s/%s parity (a backend unavailable)\n' "$a" "$e"; return; fi
+  if [ "$oj" = "$op" ]; then ok "dry-run parity: $a $e (jq == python3)"; else bad "dry-run parity: $a $e" "backends diverged"; fi
+}
+for a in codex claude cursor; do for e in low medium high xhigh; do parity_dry "$a" "$e"; done; done
+# agy low/medium have no fallback -> deterministic. agy high/xhigh carry a fallback, so force the
+# quota CLI to fail in BOTH backends so both deterministically fall back (isolating cfg-op parity
+# from environment quota state).
+parity_dry agy low; parity_dry agy medium
+parity_dry agy high  "EXTERNAL_AGENTS_AGY_QUOTA_CMD=false"
+parity_dry agy xhigh "EXTERNAL_AGENTS_AGY_QUOTA_CMD=false"
+rm -rf "$pdir"
+
 echo "== agents.json schema validation (draft-07 contract) =="
 if python3 -c 'import jsonschema' 2>/dev/null; then
   # schema_check FILE -> "OK" if FILE validates against schema/agents.schema.json, else "REJECTED".
