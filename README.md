@@ -130,7 +130,10 @@ single `--effort high` resolves, per agent, to:
 `agy` and `cursor` bake the tier into the model name and ignore a separate effort;
 `codex`/`claude` take model and effort separately. Cursor's Composer 2.5 self-calibrates its
 own effort, so its tiers ship identical — point a tier at a different model (`cursor-agent
-models` lists them once you are signed in) if you want per-tier differentiation. With no
+models` lists them once you are signed in) if you want per-tier differentiation. The cursor
+tiers pin the **non-fast** `composer-2.5` on purpose: Cursor's CLI default is the `-fast`
+variant (`composer-2.5-fast`), which spends fast/priority requests — keep the plain id to
+avoid that, or switch a tier to a `-fast` model if you do want priority routing. With no
 `--effort`, the config's `default_tier` is used (ships as `xhigh`). A per-run `--model M`
 overrides only the resolved model — the native effort still comes from the tier.
 
