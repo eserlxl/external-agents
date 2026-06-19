@@ -70,6 +70,10 @@ Three CLI-specific caveats to pass on to the user:
   (`--mode plan`) is enforced (analyze/plan, no edits), so it is a hard guarantee like
   codex/claude; it runs Cursor's own models (Composer 2.5).
 
+The canonical per-CLI read-only enforcement matrix (agy best-effort vs codex/claude/cursor
+enforced) lives in `docs/threat-model.md` and is asserted against the driver's resolved argv by
+the offline test suite — keep these caveats in sync with it.
+
 ## 3. Resolve the target  (default: current directory)
 
 - Default `--target "$PWD"`.
