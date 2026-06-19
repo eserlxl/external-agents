@@ -12,10 +12,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   (auto-approve edits + shell); read-only uses `-p --mode plan --trust` — Cursor's *enforced*
   no-edit planning mode, a hard read-only guarantee like codex/claude. The prompt is passed as
   the trailing positional after `--`, so a prompt starting with `-` can't be read as a flag.
-  Ships **enabled** in `agents.json` (so `--agent all` includes it) with every tier mapped to
-  `composer-2.5` (Composer self-calibrates effort). Its CLI binary is `cursor-agent`, not
-  `cursor` (the IDE); `--check` resolves and reports the correct binary. Requires
-  `cursor-agent login` (or `CURSOR_API_KEY`).
+  Ships **enabled** in `agents.json` (so `--agent all` includes it) with per-tier **non-fast**
+  models — `gpt-5-mini` (low), `auto` (medium), `kimi-k2.5` (high), `composer-2.5` (xhigh) —
+  chosen as plain (non-`-fast`) ids so runs don't spend Cursor's fast/priority quota. Its CLI
+  binary is `cursor-agent`, not `cursor` (the IDE); `--check` resolves and reports the correct
+  binary. Requires `cursor-agent login` (or `CURSOR_API_KEY`).
 
 ## [0.4.0] - 2026-06-19
 

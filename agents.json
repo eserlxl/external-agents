@@ -1,5 +1,5 @@
 {
-  "_comment": "external-agents config. The caller picks ONE effort level (low|medium|high|xhigh) and each agent's tier maps it to the right (model, native effort). 'enabled' agents run under `--agent all`. With no --effort, default_tier is used. agy and cursor bake the tier into the model name and ignore 'effort'; codex/claude take model + effort separately. The cursor agent's CLI binary is `cursor-agent`; run `cursor-agent models` (once logged in) for its exact --model identifiers. NOTE: cursor tiers deliberately pin the NON-fast `composer-2.5` — Cursor's own CLI default is `composer-2.5-fast`, a `-fast` variant that spends fast/priority requests; keep the plain (non-`-fast`) id to avoid burning fast requests. Read by scripts/run-agent.sh via jq (preferred) or python3. See README.md.",
+  "_comment": "external-agents config. The caller picks ONE effort level (low|medium|high|xhigh) and each agent's tier maps it to the right (model, native effort). 'enabled' agents run under `--agent all`. With no --effort, default_tier is used. agy and cursor bake the tier into the model name and ignore 'effort'; codex/claude take model + effort separately. The cursor agent's CLI binary is `cursor-agent`; run `cursor-agent models` (once logged in) for its exact --model identifiers. NOTE: cursor tiers deliberately use NON-fast model ids (no `-fast` suffix; gpt-5-mini/auto/kimi-k2.5/composer-2.5 for low/medium/high/xhigh) — Cursor's own CLI default is a `-fast` variant (e.g. `composer-2.5-fast`) that spends fast/priority requests; keep the plain ids to avoid burning fast requests. `auto` lets Cursor's router pick per task. Read by scripts/run-agent.sh via jq (preferred) or python3. See README.md.",
   "default_tier": "xhigh",
   "agents": {
     "agy": {
@@ -32,9 +32,9 @@
     "cursor": {
       "enabled": true,
       "tiers": {
-        "low":    { "model": "composer-2.5" },
-        "medium": { "model": "composer-2.5" },
-        "high":   { "model": "composer-2.5" },
+        "low":    { "model": "gpt-5-mini" },
+        "medium": { "model": "auto" },
+        "high":   { "model": "kimi-k2.5" },
         "xhigh":  { "model": "composer-2.5" }
       }
     }

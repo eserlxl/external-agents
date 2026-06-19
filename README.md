@@ -122,18 +122,19 @@ single `--effort high` resolves, per agent, to:
 
 | `--effort` | agy (tier baked into model) | codex | claude | cursor (tier baked into model) |
 |------------|-----------------------------|-------|--------|--------------------------------|
-| `low`      | `Gemini 3.5 Flash (Low)`    | `gpt-5.5` effort `low`    | `claude-haiku-4-5`  | `composer-2.5` |
-| `medium`   | `Gemini 3.5 Flash (Medium)` | `gpt-5.5` effort `medium` | `claude-sonnet-4-6` | `composer-2.5` |
-| `high`     | `Gemini 3.5 Flash (High)`   | `gpt-5.5` effort `high`   | `claude-opus-4-8` effort `high`  | `composer-2.5` |
+| `low`      | `Gemini 3.5 Flash (Low)`    | `gpt-5.5` effort `low`    | `claude-haiku-4-5`  | `gpt-5-mini` |
+| `medium`   | `Gemini 3.5 Flash (Medium)` | `gpt-5.5` effort `medium` | `claude-sonnet-4-6` | `auto` (Cursor's router picks) |
+| `high`     | `Gemini 3.5 Flash (High)`   | `gpt-5.5` effort `high`   | `claude-opus-4-8` effort `high`  | `kimi-k2.5` |
 | `xhigh`    | `Gemini 3.1 Pro (High)`     | `gpt-5.5` effort `xhigh`  | `claude-opus-4-8` effort `xhigh` | `composer-2.5` |
 
 `agy` and `cursor` bake the tier into the model name and ignore a separate effort;
-`codex`/`claude` take model and effort separately. Cursor's Composer 2.5 self-calibrates its
-own effort, so its tiers ship identical — point a tier at a different model (`cursor-agent
-models` lists them once you are signed in) if you want per-tier differentiation. The cursor
-tiers pin the **non-fast** `composer-2.5` on purpose: Cursor's CLI default is the `-fast`
-variant (`composer-2.5-fast`), which spends fast/priority requests — keep the plain id to
-avoid that, or switch a tier to a `-fast` model if you do want priority routing. With no
+`codex`/`claude` take model and effort separately. The cursor tiers map to a different
+Cursor-served model per level — `gpt-5-mini` (low), `auto` (medium — Cursor's router picks
+per task, so medium is non-deterministic), `kimi-k2.5` (high), `composer-2.5` (xhigh). All
+are **non-fast** ids on purpose: Cursor's CLI default is a `-fast` variant (e.g.
+`composer-2.5-fast`), which spends fast/priority requests — keep the plain ids, or switch a
+tier to a `-fast` model if you do want priority routing. Run `cursor-agent models` (once
+signed in) to see every id your account exposes. With no
 `--effort`, the config's `default_tier` is used (ships as `xhigh`). A per-run `--model M`
 overrides only the resolved model — the native effort still comes from the tier.
 
