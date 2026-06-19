@@ -284,6 +284,33 @@ else
   printf '  skip redaction no-false-positive assurance (timeout unavailable)\n'
 fi
 
+echo "== post-write git verification + non-git warning (stub agent, write mode) =="
+# A stub 'codex' makes a small edit, so the driver's real write path runs offline: a git target
+# must print the verification block; a non-git target must warn and suppress the block.
+if command -v timeout >/dev/null 2>&1; then
+  wstub="$(mktemp -d)"
+  cat >"$wstub/codex" <<'STUBEOF'
+#!/usr/bin/env bash
+printf 'did the edit\n'
+printf 'agent-marker\n' >> agent_edit.txt
+STUBEOF
+  chmod +x "$wstub/codex"
+  # (a) git target -> verification block on stdout.
+  gtgt="$(mktemp -d)"; godir="$(mktemp -d)"
+  ( cd "$gtgt" && git init -q && git config user.email t@t && git config user.name t && echo seed >seed.txt && git add . && git commit -qm seed )
+  gout="$(PATH="$wstub:$PATH" EXTERNAL_AGENTS_OUT="$godir" bash "$RUN" --agent codex --write --yes --target "$gtgt" --prompt x 2>/dev/null)"
+  assert_contains "post-write verification header on a git target" "$gout" "git changes after write"
+  # (b) non-git target -> no-baseline warning (stderr) and NO verification block (stdout).
+  ntgt="$(mktemp -d)"; nodir="$(mktemp -d)"
+  nerr="$(PATH="$wstub:$PATH" EXTERNAL_AGENTS_OUT="$nodir" bash "$RUN" --agent codex --write --yes --target "$ntgt" --prompt x 2>&1 >/dev/null)"
+  nout="$(PATH="$wstub:$PATH" EXTERNAL_AGENTS_OUT="$nodir" bash "$RUN" --agent codex --write --yes --target "$ntgt" --prompt x 2>/dev/null)"
+  assert_contains "non-git target warns: no baseline to diff/revert" "$nerr" "no baseline to diff or revert"
+  case "$nout" in *"git changes after write"*) bad "non-git target suppresses the verification block" "block appeared without a git baseline";; *) ok "non-git target suppresses the verification block";; esac
+  rm -rf "$wstub" "$gtgt" "$godir" "$ntgt" "$nodir"
+else
+  printf '  skip post-write verification test (timeout unavailable)\n'
+fi
+
 echo "== bump-version.sh lockstep write (mktemp fixture, real repo untouched) =="
 ft="$(mktemp -d)"
 mkdir -p "$ft/scripts" "$ft/.claude-plugin" "$ft/skills/external-agents"
