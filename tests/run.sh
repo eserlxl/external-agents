@@ -21,7 +21,7 @@ bad() { FAIL=$((FAIL + 1)); printf '  FAIL %s\n' "$1"; [ -n "${2:-}" ] && printf
 # assert_contains DESC HAYSTACK NEEDLE
 assert_contains() { case "$2" in *"$3"*) ok "$1";; *) bad "$1" "missing: $3";; esac; }
 # assert_exit DESC EXPECTED ACTUAL
-assert_exit() { [ "$3" = "$2" ] && ok "$1" || bad "$1" "expected exit $2, got $3"; }
+assert_exit() { if [ "$3" = "$2" ]; then ok "$1"; else bad "$1" "expected exit $2, got $3"; fi; }
 
 # dry DESC NEEDLE -- <run-agent args...>
 # Captures `run-agent.sh --dry-run ...` stdout and asserts NEEDLE is present.
@@ -57,8 +57,11 @@ done
 out_py="$(PATH="$tdir/bin" "$tdir/bin/bash" "$RUN" --list 2>/dev/null)"
 rm -rf "$tdir"
 if [ -n "$out_jq" ] && [ -n "$out_py" ]; then
-  [ "$out_jq" = "$out_py" ] && ok "jq and python3 --list output identical" \
-    || bad "jq and python3 --list output identical" "backends diverged"
+  if [ "$out_jq" = "$out_py" ]; then
+    ok "jq and python3 --list output identical"
+  else
+    bad "jq and python3 --list output identical" "backends diverged"
+  fi
 else
   printf '  skip jq/python3 parity (could not run both backends in this environment)\n'
 fi
@@ -77,6 +80,14 @@ bash "$RUN" --agent codex --target "$otherdir" --prompt x >/dev/null 2>&1
 assert_exit "non-cwd write without --yes exits 2" 2 "$?"
 rmdir "$otherdir" 2>/dev/null || true
 
+# --timeout must be a positive integer, validated up front (before any launch).
+bash "$RUN" --agent codex --dry-run --timeout abc --prompt x >/dev/null 2>&1
+assert_exit "--timeout abc exits 2" 2 "$?"
+bash "$RUN" --agent codex --dry-run --timeout 0 --prompt x >/dev/null 2>&1
+assert_exit "--timeout 0 exits 2" 2 "$?"
+bash "$RUN" --agent codex --dry-run --timeout 30 --prompt x >/dev/null 2>&1
+assert_exit "valid --timeout 30 accepted" 0 "$?"
+
 echo "== version lockstep (plugin.json == SKILL.md == README badge) =="
 pv="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["version"])' "$ROOT/.claude-plugin/plugin.json")"
 sv="$(grep -oE '^  version: "[^"]+"' "$ROOT/skills/external-agents/SKILL.md" | head -1 | sed -E 's/.*"([^"]+)".*/\1/')"
@@ -87,6 +98,24 @@ if [ "$pv" = "$sv" ] && [ "$pv" = "$rv" ]; then
   ok "all version strings agree ($pv)"
 else
   bad "all version strings agree" "plugin.json=$pv SKILL.md=$sv README=$rv"
+fi
+
+echo "== bump-version.sh version compute (--dry-run, no writes) =="
+BV="$ROOT/scripts/bump-version.sh"
+core="${pv%%-*}"   # current release core, pre-release suffix stripped
+IFS=. read -r _ma _mi _pa <<<"$core"
+if [ -n "${_pa:-}" ]; then
+  exp_patch="$_ma.$_mi.$((_pa + 1))"
+  exp_minor="$_ma.$((_mi + 1)).0"
+  exp_major="$((_ma + 1)).0.0"
+  # ALLOW_DIRTY=1 bypasses the dirty-tree guard; --dry-run modifies nothing.
+  assert_contains "bump patch -> $exp_patch" "$(ALLOW_DIRTY=1 bash "$BV" patch --dry-run 2>/dev/null)" "-> $exp_patch"
+  assert_contains "bump minor -> $exp_minor" "$(ALLOW_DIRTY=1 bash "$BV" minor --dry-run 2>/dev/null)" "-> $exp_minor"
+  assert_contains "bump major -> $exp_major" "$(ALLOW_DIRTY=1 bash "$BV" major --dry-run 2>/dev/null)" "-> $exp_major"
+  assert_contains "explicit X.Y.Z target"   "$(ALLOW_DIRTY=1 bash "$BV" 2.5.0 --dry-run 2>/dev/null)" "-> 2.5.0"
+  assert_contains "explicit pre-release"     "$(ALLOW_DIRTY=1 bash "$BV" 2.0.0-rc.1 --dry-run 2>/dev/null)" "-> 2.0.0-rc.1"
+else
+  printf '  skip bump-version compute (could not parse current version %s)\n' "$pv"
 fi
 
 echo "== shellcheck (regression guard) =="
