@@ -106,6 +106,12 @@ else
 fi
 
 echo "== effort + write-mode safety gates (early exit, no agent launched) =="
+# Traceability to docs/threat-model.md "Threats and mitigating controls":
+#   containment (target inside/containing plugin) -> "Plugin tree" row
+#   non-cwd write requires --yes                  -> "Target tree / wrong non-cwd target" row
+#   --read-only/--write mutual exclusion          -> "Target tree / read-only degrades to write" row
+#   post-write git verification + non-git warning -> "Target tree / no inspect-or-revert path" row
+#   symlink bypass collapsed by pwd -P            -> "Plugin tree" row (pwd -P resolution)
 bash "$RUN" --agent codex --effort bogus --dry-run --prompt x >/dev/null 2>&1
 assert_exit "unknown --effort tier exits 2" 2 "$?"
 
