@@ -159,6 +159,21 @@ grep -q 'version-1.2.3-informational' "$ft/README.md"; assert_exit "bump write: 
 grep -q '## \[1.2.3\]' "$ft/CHANGELOG.md"; assert_exit "bump write: CHANGELOG entry added" 0 "$?"
 rm -rf "$ft"
 
+echo "== --check preflight (diagnostic; restricted PATH, no agent CLIs) =="
+# Run --check with a PATH that holds the shell utilities but NONE of the agent CLIs,
+# so every candidate (agy/codex/claude/cursor) must be reported missing and the exit
+# code must reflect it. Reuses the restricted-bin technique from the parity test above.
+cdir="$(mktemp -d)"
+mkdir -p "$cdir/bin"
+for t in bash env python3 grep dirname basename cat sed sort tr cut wc paste date mktemp git head tail; do
+  s="$(command -v "$t" 2>/dev/null)" && ln -s "$s" "$cdir/bin/$t" 2>/dev/null || true
+done
+chk_out="$(PATH="$cdir/bin" "$cdir/bin/bash" "$RUN" --check 2>&1)"; chk_rc=$?
+rm -rf "$cdir"
+assert_contains "--check prints the preflight header"        "$chk_out" "external-agents preflight:"
+assert_contains "--check probes cursor as the cursor-agent binary" "$chk_out" "need cursor-agent on PATH"
+assert_exit     "--check exits non-zero when agent CLIs are missing" 1 "$chk_rc"
+
 echo "== shellcheck (regression guard) =="
 if command -v shellcheck >/dev/null 2>&1; then
   if shellcheck "$ROOT/scripts/run-agent.sh" "$ROOT/scripts/bump-version.sh" >/dev/null 2>&1; then
