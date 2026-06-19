@@ -192,6 +192,12 @@ config against the schema with `jq` + `python3`:
 python3 -c "import json,jsonschema; jsonschema.validate(json.load(open('agents.json')), json.load(open('schema/agents.schema.json')))"
 ```
 
+The contract: `default_tier` and `agents` are required; each agent requires `enabled` and `tiers`;
+each tier requires `model`, with `effort` and `fallback` optional (and `fallback` accepted **only**
+on `agy`). `tests/run.sh` validates the shipped config against the schema and asserts that bad
+fixtures (missing `model`, wrong-typed `default_tier`, non-object `tiers`, non-agy `fallback`) are
+rejected; CI runs the same validation on every push/PR, so a contract violation fails the build.
+
 ### agy quota-aware fallback (Antigravity)
 
 `agy` is Google's Antigravity, which gives **large Gemini limits** but **small, precious
