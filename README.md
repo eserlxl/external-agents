@@ -169,6 +169,29 @@ even if disabled. Ships with `agy` + `codex` + `cursor` enabled and `claude` dis
 Run `bash scripts/run-agent.sh --list` to print the full resolved table, enabled status,
 and `default_tier`. Reading the JSON needs `jq` (preferred) or `python3` on `PATH`.
 
+### Config schema and validation
+
+`schema/agents.schema.json` is a JSON Schema (draft-07) for `agents.json`. Each schema key maps to
+the `cfg` query op the driver reads it with — the same op surface in both the `jq` and `python3`
+backends — so the schema, the config, and both readers stay aligned:
+
+| schema key | `cfg` op | meaning |
+|------------|----------|---------|
+| `default_tier` | `default_tier` | tier used when `--effort` is omitted |
+| `agents` | `agents` | the set of configured agents |
+| `agents.<a>.enabled` | `enabled` | whether `<a>` runs under `--agent all` |
+| `agents.<a>.tiers` | `tiers` | the tier map for `<a>` |
+| `…tiers.<t>.model` | `model` | model id for tier `<t>` |
+| `…tiers.<t>.effort` | `effort` | native effort (codex/claude) |
+| `…tiers.<t>.fallback` | `fallback` | agy-only quota-fallback model |
+
+Only the `agy` agent's tiers may carry `fallback` (the schema enforces this). Validate the shipped
+config against the schema with `jq` + `python3`:
+
+```bash
+python3 -c "import json,jsonschema; jsonschema.validate(json.load(open('agents.json')), json.load(open('schema/agents.schema.json')))"
+```
+
 ### agy quota-aware fallback (Antigravity)
 
 `agy` is Google's Antigravity, which gives **large Gemini limits** but **small, precious
