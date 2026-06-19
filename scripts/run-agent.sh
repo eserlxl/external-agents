@@ -559,12 +559,29 @@ build_argv() {  # agent ; sets global ARGV[]
   return 0
 }
 
-run_one() {  # agent  (cwd=TARGET) — stdout->$OUT/<a>.md, stderr->.err, rc/.sec
+# redact — best-effort, length-bounded masking of secret-shaped tokens in transcript
+# text (stdin -> stdout). NOT a guarantee of total secret removal (see README Safety):
+# masks known token prefixes (sk-/pk-, gh*_/github_pat_, xox*-, AKIA…), Bearer tokens,
+# KEY=/TOKEN=/SECRET=/PASSWORD= assignments, and a generic long high-entropy run.
+redact() {
+  sed -E \
+    -e 's/(sk|pk)-[A-Za-z0-9_-]{20,}/\1-<REDACTED>/g' \
+    -e 's/(gh[posru]|github_pat)_[A-Za-z0-9_]{20,}/\1_<REDACTED>/g' \
+    -e 's/xox[baprs]-[A-Za-z0-9-]{10,}/xox-<REDACTED>/g' \
+    -e 's/AKIA[0-9A-Z]{16}/AKIA<REDACTED>/g' \
+    -e 's#([Bb]earer[[:space:]]+)[A-Za-z0-9._~+/-]{20,}#\1<REDACTED>#g' \
+    -e 's/(([A-Za-z0-9_]*(KEY|TOKEN|SECRET|PASSWORD|PASSWD))[[:space:]]*[=:][[:space:]]*)[^[:space:]]{8,}/\1<REDACTED>/Ig' \
+    -e 's#[A-Za-z0-9+/]{40,}={0,2}#<REDACTED>#g'
+}
+
+run_one() {  # agent  (cwd=TARGET) — stdout->$OUT/<a>.md (redacted), stderr->.err, rc/.sec
   local a="$1" t0 t1 rc
   build_argv "$a" || return 1
   t0=$(date +%s 2>/dev/null || echo 0)
-  ( cd "$TARGET" && timeout "$TIMEOUT" "${ARGV[@]}" ) >"$OUT/$a.md" 2>"$OUT/$a.err"
-  rc=$?
+  # Pipe stdout through redact so a secret-shaped token never persists to disk or echo;
+  # rc is the agent's (PIPESTATUS[0]), not redact's.
+  ( cd "$TARGET" && timeout "$TIMEOUT" "${ARGV[@]}" ) 2>"$OUT/$a.err" | redact >"$OUT/$a.md"
+  rc=${PIPESTATUS[0]}
   t1=$(date +%s 2>/dev/null || echo 0)
   echo "$rc" >"$OUT/$a.rc"; echo "$((t1 - t0))" >"$OUT/$a.sec"
 }
@@ -610,7 +627,7 @@ for a in "${RUN[@]}"; do
   echo "===== $a (rc=$rc ${sec}s ${bytes:-0} bytes) ====="
   cat "$OUT/$a.md" 2>/dev/null
   if [ "$rc" != "0" ] || [ "${bytes:-0}" -lt 1 ]; then
-    echo "----- $a stderr -----"; cat "$OUT/$a.err" 2>/dev/null
+    echo "----- $a stderr -----"; redact <"$OUT/$a.err" 2>/dev/null
   fi
   echo
   if [ "$rc" = "0" ] && [ "${bytes:-0}" -gt 0 ]; then ok=$((ok+1)); else fail=$((fail+1)); fi
