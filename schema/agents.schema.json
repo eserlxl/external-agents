@@ -18,42 +18,57 @@
     },
     "agents": {
       "type": "object",
-      "description": "Map of agent name (agy|codex|claude|cursor) to its config.",
+      "description": "Map of agent name to its config. Only the agy agent's tiers may carry a 'fallback'; every other agent uses the no-fallback tier shape.",
       "minProperties": 1,
-      "additionalProperties": {
-        "type": "object",
-        "required": ["enabled", "tiers"],
-        "additionalProperties": false,
-        "properties": {
-          "enabled": {
-            "type": "boolean",
-            "description": "Whether this agent runs under --agent all."
-          },
-          "tiers": {
-            "type": "object",
-            "description": "Map of tier name (low|medium|high|xhigh) to its model selection.",
-            "minProperties": 1,
-            "additionalProperties": {
-              "type": "object",
-              "required": ["model"],
-              "additionalProperties": false,
-              "properties": {
-                "model": {
-                  "type": "string",
-                  "description": "Model id passed to the agent CLI for this tier.",
-                  "minLength": 1
-                },
-                "effort": {
-                  "type": "string",
-                  "description": "Native effort level (codex/claude only); agy/cursor bake the tier into the model name."
-                },
-                "fallback": {
-                  "type": "string",
-                  "description": "Larger-limit model used when the primary's quota is unconfirmed (agy only)."
-                }
-              }
-            }
-          }
+      "properties": {
+        "agy": { "$ref": "#/definitions/agentWithFallback" }
+      },
+      "additionalProperties": { "$ref": "#/definitions/agentNoFallback" }
+    }
+  },
+  "definitions": {
+    "tierNoFallback": {
+      "type": "object",
+      "required": ["model"],
+      "additionalProperties": false,
+      "properties": {
+        "model": { "type": "string", "minLength": 1, "description": "Model id passed to the agent CLI for this tier." },
+        "effort": { "type": "string", "description": "Native effort level (codex/claude only); agy/cursor bake the tier into the model name." }
+      }
+    },
+    "tierWithFallback": {
+      "type": "object",
+      "required": ["model"],
+      "additionalProperties": false,
+      "properties": {
+        "model": { "type": "string", "minLength": 1, "description": "Primary model id; for agy 3rd-party tiers, spent only when antigravity-usage confirms quota." },
+        "effort": { "type": "string", "description": "Native effort level; agy bakes the tier into the model name." },
+        "fallback": { "type": "string", "minLength": 1, "description": "Larger-limit Gemini model used when the primary's quota is unconfirmed. agy-only." }
+      }
+    },
+    "agentNoFallback": {
+      "type": "object",
+      "required": ["enabled", "tiers"],
+      "additionalProperties": false,
+      "properties": {
+        "enabled": { "type": "boolean", "description": "Whether this agent runs under --agent all." },
+        "tiers": {
+          "type": "object",
+          "minProperties": 1,
+          "additionalProperties": { "$ref": "#/definitions/tierNoFallback" }
+        }
+      }
+    },
+    "agentWithFallback": {
+      "type": "object",
+      "required": ["enabled", "tiers"],
+      "additionalProperties": false,
+      "properties": {
+        "enabled": { "type": "boolean", "description": "Whether this agent runs under --agent all." },
+        "tiers": {
+          "type": "object",
+          "minProperties": 1,
+          "additionalProperties": { "$ref": "#/definitions/tierWithFallback" }
         }
       }
     }
