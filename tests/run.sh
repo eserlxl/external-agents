@@ -120,6 +120,11 @@ assert_exit "write target containing the plugin exits 2" 2 "$?"
 cont_err="$(bash "$RUN" --agent codex --target "$(dirname "$ROOT")" --prompt x 2>&1 >/dev/null)"
 assert_contains "containment gate is explained" "$cont_err" "contains the plugin tree"
 
+# A subdir INSIDE the plugin tree is refused with the documented message (not just exit 2).
+in_err="$(bash "$RUN" --agent codex --target "$ROOT/scripts" --prompt x 2>&1 >/dev/null)"; in_rc=$?
+assert_exit     "write into a plugin subdir exits 2"  2 "$in_rc"
+assert_contains "inside-plugin refusal is explained"  "$in_err" "refusing to write inside the plugin tree"
+
 # Write target outside cwd without --yes -> refused before any launch.
 otherdir="$(mktemp -d)"
 bash "$RUN" --agent codex --target "$otherdir" --prompt x >/dev/null 2>&1
