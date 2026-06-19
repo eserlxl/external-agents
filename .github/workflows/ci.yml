@@ -8,6 +8,11 @@ permissions:
   contents: read
 
 jobs:
+  # The single required check job is OFFLINE BY DESIGN: shellcheck + the CLI-free
+  # tests/run.sh. It must NEVER invoke the opt-in live harness (tests/live-smoke.sh),
+  # which launches real external agent CLIs (cost + ships the tree to third-party
+  # providers). Any live verification belongs in a SEPARATE, non-required, manually /
+  # scheduled job — never a step added to this job.
   check:
     runs-on: ubuntu-latest
     steps:

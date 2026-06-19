@@ -294,6 +294,11 @@ When armed, the harness scopes itself to the agents actually installed (via the 
 **unreachable** one is skipped with a clear per-agent line. Absence of a CLI is never a failure — an
 environment with no agents on `PATH` reports every agent skipped and still exits 0.
 
+The **required CI gate is offline by design** (`shellcheck` + `tests/run.sh`) and never runs the live
+harness — launching real CLIs costs money and ships the tree to third-party providers. Any live
+verification must be a **separate, non-required, manual or scheduled** job, never a step added to the
+required check job.
+
 ## Files
 
 ```
