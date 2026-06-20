@@ -1234,6 +1234,20 @@ rm -rf "$nrdir" "$nrod"
 assert_exit     "run-e2e.sh: armed + no agent CLIs -> exit 0" 0 "$nr_rc"
 assert_contains "run-e2e.sh: reports no reachable agents"      "$nr_out" "no reachable agents"
 
+echo "== e2e recipes: uniform skip-when-absent (armed, no agent CLIs -> exit 0) =="
+# run-e2e.sh's no-reachable path is asserted above; prove EACH recipe is uniformly skip-when-absent too
+# — armed (EXTERNAL_AGENTS_LIVE=1) but with NO agent CLI on PATH, every recipe must exit 0 with a clear
+# "no agents to run" line, never a failure or a launch. Reuses the restricted-bin technique so discovery
+# finds nothing reachable (shell utils present, no agent CLIs).
+for r in review-readonly edit-readwrite edit-non-git; do
+  swa_dir="$(mktemp -d)"; mk_restricted_bin "$swa_dir"; swa_out="$(mktemp -d)"
+  swa_msg="$(PATH="$swa_dir/bin" EXTERNAL_AGENTS_LIVE=1 EXTERNAL_AGENTS_OUT="$swa_out" \
+    "$swa_dir/bin/bash" "$ROOT/tests/e2e/$r.sh" 2>&1)"; swa_rc=$?
+  rm -rf "$swa_dir" "$swa_out"
+  assert_exit     "skip-when-absent: $r armed + no CLIs -> exit 0" 0 "$swa_rc"
+  assert_contains "skip-when-absent: $r reports no agents to run"   "$swa_msg" "no agents to run"
+done
+
 echo "== e2e recipe dispatch drift guard (run-e2e.sh list == recipe files) =="
 # run-e2e.sh hardcodes the recipes it dispatches (`for recipe in ...`); a recipe file added without
 # updating that list — or removed while still listed — would be silently never run. Assert the
