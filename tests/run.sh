@@ -407,6 +407,26 @@ else
   printf '  skip argv-record secret-safety test (timeout unavailable)\n'
 fi
 
+echo "== live-smoke sandbox fixture (disposable, git-backed, outside the plugin tree) =="
+# Source the live harness — it guards main() behind a direct-execution check, so sourcing
+# only defines its helper functions — then assert make_sandbox returns a seeded git tree
+# that is NEVER inside the plugin tree (a read-only live run must target a throwaway).
+# shellcheck disable=SC1090  # sourced by absolute path to unit-test the harness helpers
+. "$ROOT/tests/live-smoke.sh"
+sb="$(make_sandbox)"
+if [ -n "$sb" ] && [ -d "$sb" ]; then
+  case "$sb/" in
+    "$ROOT/"*) bad "sandbox path is never inside the plugin tree" "got $sb under $ROOT";;
+    *)         ok "sandbox path is never inside the plugin tree";;
+  esac
+  if [ -d "$sb/.git" ]; then ok "sandbox is a git repo"; else bad "sandbox is a git repo" "no .git in $sb"; fi
+  if [ -f "$sb/sample.py" ]; then ok "sandbox seeded from tests/fixtures"; else bad "sandbox seeded from tests/fixtures" "fixture sample.py not copied"; fi
+  if [ -z "$(git -C "$sb" status --porcelain 2>/dev/null)" ]; then ok "fresh sandbox tree is clean"; else bad "fresh sandbox tree is clean" "unexpected dirty state in a fresh sandbox"; fi
+  rm -rf "$sb"
+else
+  bad "make_sandbox produced a sandbox" "no path returned"
+fi
+
 echo "== bump-version.sh lockstep write (mktemp fixture, real repo untouched) =="
 ft="$(mktemp -d)"
 mkdir -p "$ft/scripts" "$ft/.claude-plugin" "$ft/skills/external-agents"

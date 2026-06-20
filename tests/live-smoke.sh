@@ -15,31 +15,14 @@
 #
 # This mirrors the existing EXTERNAL_AGENTS_* convention (EXTERNAL_AGENTS_OUT,
 # EXTERNAL_AGENTS_AGY_QUOTA_CMD, …). Run from anywhere:  bash tests/live-smoke.sh
+#
+# Sourceable: every step lives in a function and main() runs ONLY when this script is
+# executed directly, so tests/run.sh can source it to unit-test the helpers offline.
 set -uo pipefail
-
-# --- arming gate: the one switch that decides whether ANY live work runs --------
-# Read it BEFORE resolving anything else so an unarmed run is a pure no-op.
-LIVE="${EXTERNAL_AGENTS_LIVE:-0}"
-if [ "$LIVE" != "1" ]; then
-  echo "live smoke skipped (set EXTERNAL_AGENTS_LIVE=1)"
-  exit 0
-fi
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)"
 RUN="$ROOT/scripts/run-agent.sh"
-[ -x "$RUN" ] || { echo "live smoke: driver not found at $RUN" >&2; exit 1; }
 
-echo "external-agents live smoke: armed (EXTERNAL_AGENTS_LIVE=1)"
-
-# Optional --agent <name> selector scopes the smoke to one agent (default: every
-# reachable agent). A short read-only prompt keeps each live invocation cheap.
-WANT_AGENT=""
-while [ $# -gt 0 ]; do
-  case "$1" in
-    --agent) WANT_AGENT="${2:-}"; shift 2;;
-    *) echo "live smoke: unknown arg: $1" >&2; exit 2;;
-  esac
-done
 SMOKE_PROMPT="${EXTERNAL_AGENTS_LIVE_PROMPT:-Reply with the single word: ok}"
 # Each argv-coverage run only needs run_one's pre-launch argv record, so a short timeout
 # keeps the (mode x prompt-source) matrix light while still exercising the real run path.
@@ -50,6 +33,29 @@ SMOKE_TIMEOUT="${EXTERNAL_AGENTS_LIVE_TIMEOUT:-60}"
 # <PROMPT>, secret/PII-free.
 live_argv_record() {
   cat "$1/$2.argv" 2>/dev/null
+}
+
+# make_sandbox — create a fresh DISPOSABLE sandbox tree and print its path. The tree is a
+# git repo with one seed commit, seeded from tests/fixtures (a committed minimal project)
+# when present, else a single generated file. It is created under $TMPDIR and is GUARANTEED
+# outside the plugin tree, so a read-only run targets a throwaway, never the real repo. The
+# caller removes it (rm -rf) when done.
+make_sandbox() {
+  local seed="$ROOT/tests/fixtures" sb
+  sb="$(mktemp -d)" || return 1
+  # Hard invariant: never hand back a path inside the plugin tree.
+  case "$sb/" in "$ROOT/"*)
+    echo "make_sandbox: refusing a sandbox inside the plugin tree ($sb)" >&2
+    rm -rf "$sb"; return 1;;
+  esac
+  if [ -d "$seed" ] && [ -n "$(ls -A "$seed" 2>/dev/null)" ]; then
+    cp -R "$seed/." "$sb/"
+  else
+    printf 'seed file for the read-only live-smoke sandbox\n' >"$sb/SEED.txt"
+  fi
+  ( cd "$sb" && git init -q && git add -A \
+      && git -c user.email=smoke@local -c user.name=smoke commit -qm "sandbox seed" ) >/dev/null 2>&1
+  printf '%s' "$sb"
 }
 
 # argv_equiv AGENT MODE SRC — prove the LIVE launch argv matches what --dry-run shows for
@@ -93,54 +99,81 @@ argv_equiv() {  # agent mode src
   return 1
 }
 
-# Scope the harness to reachable agents and skip the rest with a clear per-agent line.
-# Discovery is the driver's machine-readable --discover surface (same agent_bin /
-# command -v probe as --check), so the harness never re-implements detection. Absence
-# is NEVER a failure: an environment with no agent CLIs on PATH still exits 0.
-discovered="$("$RUN" --discover 2>/dev/null)"
-reachable=()
-while read -r a state _; do
-  [ -n "$a" ] || continue
-  if [ "$state" = "present" ]; then
-    reachable+=("$a")
-  else
-    echo "live smoke: $a skipped (not reachable on PATH)"
+# main — the live run. Runs ONLY when this script is executed directly (see the guard at the
+# bottom); sourcing the file for unit tests defines the helpers above without running this.
+main() {
+  local LIVE="${EXTERNAL_AGENTS_LIVE:-0}"
+  if [ "$LIVE" != "1" ]; then
+    echo "live smoke skipped (set EXTERNAL_AGENTS_LIVE=1)"
+    return 0
   fi
-done <<EOF
+  [ -x "$RUN" ] || { echo "live smoke: driver not found at $RUN" >&2; return 1; }
+  echo "external-agents live smoke: armed (EXTERNAL_AGENTS_LIVE=1)"
+
+  # Optional --agent <name> selector scopes the smoke to one agent (default: every reachable).
+  local WANT_AGENT=""
+  while [ $# -gt 0 ]; do
+    case "$1" in
+      --agent) WANT_AGENT="${2:-}"; shift 2;;
+      *) echo "live smoke: unknown arg: $1" >&2; return 2;;
+    esac
+  done
+
+  # Scope the harness to reachable agents and skip the rest with a clear per-agent line.
+  # Discovery is the driver's machine-readable --discover surface (same agent_bin /
+  # command -v probe as --check), so the harness never re-implements detection. Absence
+  # is NEVER a failure: an environment with no agent CLIs on PATH still exits 0.
+  local discovered a state reachable=()
+  discovered="$("$RUN" --discover 2>/dev/null)"
+  while read -r a state _; do
+    [ -n "$a" ] || continue
+    if [ "$state" = "present" ]; then
+      reachable+=("$a")
+    else
+      echo "live smoke: $a skipped (not reachable on PATH)"
+    fi
+  done <<EOF
 $discovered
 EOF
 
-# Apply the optional --agent scope to the reachable set.
-verify=()
-if [ -n "$WANT_AGENT" ]; then
-  for a in ${reachable[@]+"${reachable[@]}"}; do
-    [ "$a" = "$WANT_AGENT" ] && verify=("$a")
-  done
-  [ "${#verify[@]}" -gt 0 ] || echo "live smoke: $WANT_AGENT skipped (not reachable on PATH)"
-else
-  verify=(${reachable[@]+"${reachable[@]}"})
-fi
+  # Apply the optional --agent scope to the reachable set.
+  local verify=()
+  if [ -n "$WANT_AGENT" ]; then
+    for a in ${reachable[@]+"${reachable[@]}"}; do
+      [ "$a" = "$WANT_AGENT" ] && verify=("$a")
+    done
+    [ "${#verify[@]}" -gt 0 ] || echo "live smoke: $WANT_AGENT skipped (not reachable on PATH)"
+  else
+    verify=(${reachable[@]+"${reachable[@]}"})
+  fi
 
-if [ "${#verify[@]}" -eq 0 ]; then
-  echo "live smoke: no reachable agents to verify — nothing to do (exit 0)"
-  exit 0
-fi
-echo "live smoke: verifying ${verify[*]}"
+  if [ "${#verify[@]}" -eq 0 ]; then
+    echo "live smoke: no reachable agents to verify — nothing to do (exit 0)"
+    return 0
+  fi
+  echo "live smoke: verifying ${verify[*]}"
 
-# Per-agent live checks. Phase 2.2 verifies argv equivalence across every (mode,
-# prompt-source) build_argv path; non-mutation and transcript-success checks are added
-# by the later Phase 2 sub-phases.
-fails=0
-for a in "${verify[@]}"; do
-  for mode in read-only read-write; do
-    for src in prompt prompt-file; do
-      argv_equiv "$a" "$mode" "$src" || fails=$((fails + 1))
+  # Per-agent live checks. Phase 2.2 verifies argv equivalence across every (mode,
+  # prompt-source) build_argv path; non-mutation and transcript-success checks are added
+  # by the later Phase 2 sub-phases.
+  local fails=0 mode src
+  for a in "${verify[@]}"; do
+    for mode in read-only read-write; do
+      for src in prompt prompt-file; do
+        argv_equiv "$a" "$mode" "$src" || fails=$((fails + 1))
+      done
     done
   done
-done
-if [ "$fails" -gt 0 ]; then
-  echo "live smoke: $fails (agent, mode, prompt-source) case(s) failed argv equivalence" >&2
-  exit 1
+  if [ "$fails" -gt 0 ]; then
+    echo "live smoke: $fails (agent, mode, prompt-source) case(s) failed argv equivalence" >&2
+    return 1
+  fi
+  echo "live smoke: argv equivalence verified for ${verify[*]} (read-only+read-write x prompt+prompt-file)"
+  return 0
+}
+
+# Run main only when executed directly (not when sourced to unit-test the helpers).
+if [ "${BASH_SOURCE[0]}" = "${0}" ]; then
+  main "$@"
+  exit $?
 fi
-echo "live smoke: argv equivalence verified for ${verify[*]} (read-only+read-write x prompt+prompt-file)"
-exit 0
