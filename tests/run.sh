@@ -1095,6 +1095,55 @@ assert_contains "--discover names cursor's cursor-agent binary" "$disc_out" "cur
 disc_lines="$(printf '%s\n' "$disc_out" | grep -cE '^(agy|codex|claude|cursor) (present|missing) ')"
 assert_exit     "--discover emits one shaped line per agent (4)" 4 "$disc_lines"
 
+echo "== auth-contract consistency (README per-agent contract <-> driver agents/bins; presence-only) =="
+# (1) The documented per-agent auth-prerequisite contract (README "Per-agent auth prerequisites") must
+# stay consistent with the driver's known agent set + agent_bin mapping. (2) --check/--discover must
+# remain PRESENCE-ONLY: a `command -v` probe, never EXECUTING the agent binary (which is how an
+# auth/network call would happen). Fully offline; no agent CLI is ever launched.
+# Driver's agents + resolved binaries via the machine-readable --discover surface (restricted PATH).
+ac_dir="$(mktemp -d)"; mk_restricted_bin "$ac_dir"
+ac_disc="$(PATH="$ac_dir/bin" "$ac_dir/bin/bash" "$RUN" --discover 2>/dev/null)"
+rm -rf "$ac_dir"
+# README contract rows for the four non-optional agents -> "<agent> <binary>"; each must match a
+# driver --discover line "<agent> <present|missing> <binary>". (Backticks below are literal markdown
+# table delimiters, not command substitution — hence the SC2016 disable.)
+# shellcheck disable=SC2016
+ac_rows="$(grep -E '^\| `(agy|codex|claude|cursor)` ' "$ROOT/README.md" | sed -E 's/^\| `([a-z]+)` *\| `([a-z-]+)`.*/\1 \2/')"
+ac_mismatch=""
+while read -r a bin; do
+  [ -n "$a" ] || continue
+  printf '%s\n' "$ac_disc" | grep -qE "^$a (present|missing) $bin( |$)" || ac_mismatch="$ac_mismatch $a:$bin"
+done <<< "$ac_rows"
+if [ -z "$ac_mismatch" ]; then
+  ok "auth-contract: documented agents match the driver's agent_bin mapping"
+else
+  bad "auth-contract: documented agents match the driver's agent_bin mapping" "mismatch:$ac_mismatch"
+fi
+# Set equality: the documented agent set equals the driver's agent set (contract can't omit/add one).
+# shellcheck disable=SC2016
+ac_doc="$(grep -oE '^\| `(agy|codex|claude|cursor)` ' "$ROOT/README.md" | grep -oE '(agy|codex|claude|cursor)' | sort -u)"
+ac_drv="$(printf '%s\n' "$ac_disc" | grep -oE '^(agy|codex|claude|cursor)' | sort -u)"
+if [ -n "$ac_doc" ] && [ "$ac_doc" = "$ac_drv" ]; then
+  ok "auth-contract: documented agent set equals the driver's agent set"
+else
+  bad "auth-contract: documented agent set equals the driver's agent set" \
+      "doc=[$(printf '%s' "$ac_doc" | paste -sd' ' -)] drv=[$(printf '%s' "$ac_drv" | paste -sd' ' -)]"
+fi
+# Presence-only boundary: a stub that writes a sentinel WHEN EXECUTED must stay un-executed by
+# --check / --discover (they may only command -v it). This fails if either is changed to run the CLI.
+po_dir="$(mktemp -d)"; po_sentinel="$po_dir/EXECUTED"
+printf '#!/usr/bin/env bash\ntouch "%s"\n' "$po_sentinel" >"$po_dir/codex"; chmod +x "$po_dir/codex"
+po_chk="$(PATH="$po_dir:$PATH" bash "$RUN" --agent codex --check 2>&1)"
+po_chk_exec=0; [ -e "$po_sentinel" ] && po_chk_exec=1
+rm -f "$po_sentinel"
+po_disc="$(PATH="$po_dir:$PATH" bash "$RUN" --agent codex --discover 2>&1)"
+po_disc_exec=0; [ -e "$po_sentinel" ] && po_disc_exec=1
+rm -rf "$po_dir"
+assert_contains "presence-only: --check reports the stub agent present"     "$po_chk"  "ok   codex"
+assert_contains "presence-only: --discover reports the stub agent present"  "$po_disc" "codex present"
+assert_exit     "presence-only: --check never executed the agent binary"    0 "$po_chk_exec"
+assert_exit     "presence-only: --discover never executed the agent binary" 0 "$po_disc_exec"
+
 echo "== agents.json malformed-config resilience (degrade, never crash) =="
 # (1) Hard-malformed: "agents" is an array, not an object -> rejected with a clear
 #     message and exit 2 (conf_problem) before any agent is resolved.
