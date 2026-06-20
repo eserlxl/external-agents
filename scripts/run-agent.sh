@@ -701,7 +701,8 @@ extract_signal() {
 # run id (groups a fan-out) and the project namespace. Append-only and control-plane only (the meta
 # record already is), so the index never accrues transcript text. No-op if the meta record is absent.
 # Read-only cross-run trends over this index are produced by scripts/run-history-report.sh; bounded
-# rotation/retention (atomic-rename to a timestamped archive) is performed by scripts/run-history-maintain.sh.
+# rotation/retention (atomic-rename to a timestamped archive) is performed by scripts/run-history-maintain.sh;
+# backup/restore of this index (content-identical) is documented in RUNBOOK.md.
 append_index_row() {
   local index="$1" meta="$2" run_id="$3" project="$4"
   [ -f "$meta" ] || return 0

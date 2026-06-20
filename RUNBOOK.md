@@ -32,3 +32,32 @@ The index grows unbounded with use. Rotation bounds storage **without losing row
   half-written row, and no rows are lost.
 - **Location.** Every archive lives under `<EXTERNAL_AGENTS_OUT>/archive/`, outside the repo, so
   rotation never touches tracked files.
+
+## Backup & restore
+
+The rotation archives under `<EXTERNAL_AGENTS_OUT>/archive/` double as **backups** of the run index;
+the per-run records (`<EXTERNAL_AGENTS_OUT>/<project>/`) can be archived the same way. Both use plain
+file copies, so a restore reproduces **content-identical** rows.
+
+**Back up** the current index into the archive directory:
+
+```bash
+base="${EXTERNAL_AGENTS_OUT:-$HOME/.external-agents/logs}"
+mkdir -p "$base/archive"
+cp -p "$base/index.jsonl" "$base/archive/index-backup-$(date -u +%Y%m%dT%H%M%SZ).jsonl"
+```
+
+**Restore** after a corruption or accidental deletion — recover from one archive (exact copy) or
+reconstruct the whole history from every archive (archives sort chronologically by name):
+
+```bash
+base="${EXTERNAL_AGENTS_OUT:-$HOME/.external-agents/logs}"
+# from a single archive (byte-for-byte):
+cp -p "$base/archive/index-<UTC>.jsonl" "$base/index.jsonl"
+# OR reconstruct the full history:
+cat "$base"/archive/index-*.jsonl > "$base/index.jsonl"
+```
+
+`cp` / `cat` preserve each row verbatim, so the restored index is **content-identical** to the
+originals — the offline recoverability drill in `tests/run.sh` proves exactly this. All backup and
+restore writes stay under `EXTERNAL_AGENTS_OUT`, never inside the repo.
