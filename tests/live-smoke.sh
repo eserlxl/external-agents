@@ -79,6 +79,12 @@ argv_equiv() {  # agent mode src
     "${pargs[@]}" 2>/dev/null | sed -nE "s/^  $a +//p")"
   [ "$src" = "prompt-file" ] && rm -f "$pf"
   rm -rf "$tgt" "$out"
+  # Secret-safety guard: the record masks the prompt to <PROMPT>, so it must NEVER contain
+  # the literal prompt (which could carry a secret). A leak is a hard failure, not a diff.
+  case "$rec" in *"$SMOKE_PROMPT"*)
+    echo "live smoke: $a [$mode/$src]  FAIL: argv record leaked the prompt text" >&2
+    return 1;;
+  esac
   if [ -n "$rec" ] && [ "$rec" = "$dry" ]; then
     echo "live smoke: $a [$mode/$src]  live argv == dry-run argv"
     return 0

@@ -385,6 +385,28 @@ else
   printf '  skip live-argv-record test (timeout unavailable)\n'
 fi
 
+echo "== live argv record secret-safety (a secret-bearing prompt never leaks) =="
+# Even when the prompt embeds a secret-shaped token, the argv record masks the whole prompt
+# at PROMPT_IDX to <PROMPT> — so neither the secret nor the prompt text reaches the record,
+# and no other argv token (flags/model/target) carries sensitive data.
+if command -v timeout >/dev/null 2>&1; then
+  sstub="$(mktemp -d)"; stgt="$(mktemp -d)"; sodir="$(mktemp -d)"
+  printf '#!/usr/bin/env bash\ntrue\n' >"$sstub/codex"; chmod +x "$sstub/codex"
+  SEKRIT="sk-LIVESMOKE0123456789ABCDEFGHIJ"
+  PATH="$sstub:$PATH" EXTERNAL_AGENTS_OUT="$sodir" \
+    bash "$RUN" --agent codex --read-only --target "$stgt" --prompt "please use token $SEKRIT now" >/dev/null 2>&1
+  srec="$(cat "$sodir/$(basename "$stgt")/codex.argv" 2>/dev/null)"
+  assert_contains "secret-bearing prompt is masked at PROMPT_IDX (<PROMPT>)" "$srec" "<PROMPT>"
+  case "$srec" in *"$SEKRIT"*) bad "argv record carries no secret from the prompt" "secret leaked into the argv record";; *) ok "argv record carries no secret from the prompt";; esac
+  case "$srec" in *"please use token"*) bad "argv record carries no prompt text" "prompt text leaked into the argv record";; *) ok "argv record carries no prompt text";; esac
+  # Every non-prompt token is a flag/model/target — the record is exactly the resolved
+  # codex read-only argv with <PROMPT> as the sole payload slot.
+  assert_contains "argv record is the resolved codex read-only argv" "$srec" "codex exec -s read-only"
+  rm -rf "$sstub" "$stgt" "$sodir"
+else
+  printf '  skip argv-record secret-safety test (timeout unavailable)\n'
+fi
+
 echo "== bump-version.sh lockstep write (mktemp fixture, real repo untouched) =="
 ft="$(mktemp -d)"
 mkdir -p "$ft/scripts" "$ft/.claude-plugin" "$ft/skills/external-agents"
