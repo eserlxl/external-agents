@@ -391,7 +391,12 @@ external-agents/
 ├── scripts/bump-version.sh         # lockstep version bumper
 ├── tests/run.sh                    # offline test suite (run-agent + bump-version)
 ├── tests/live-smoke.sh             # opt-in live smoke harness (EXTERNAL_AGENTS_LIVE)
-├── tests/e2e/                      # opt-in end-to-end delegation recipes
-├── docs/e2e-recipe.md              # the shared E2E recipe contract
+├── tests/e2e/                      # opt-in end-to-end delegation recipes:
+│   ├── run-e2e.sh                  #   gated entry point (discovers agents, runs all recipes)
+│   ├── review-readonly.sh          #   read-only review (enforced no-mutation; agy best-effort)
+│   ├── edit-readwrite.sh           #   read-write edit on a git fixture (post-write verification)
+│   ├── edit-non-git.sh             #   read-write on a non-git dir (no-baseline warning)
+│   └── lib/                        #   fixture.sh + capture.sh (deterministic fixture + evidence)
+├── docs/e2e-recipe.md              # the shared E2E recipe contract + per-recipe steps
 └── .github/workflows/ci.yml        # CI: shellcheck + tests on push/PR
 ```

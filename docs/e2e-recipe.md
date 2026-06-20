@@ -119,4 +119,41 @@ tiny-edit prompt, proves a real write round-trips, and checks the driver's post-
 EXTERNAL_AGENTS_LIVE=1 bash tests/e2e/edit-readwrite.sh codex    # one agent
 ```
 
-<!-- non-git write section is appended by the Phase 3.4 plan items -->
+### Non-git write (`edit-non-git.sh`)
+
+Drives each reachable agent through `run-agent.sh --write` against a deliberately **non-git**
+throwaway directory, to exercise the driver's no-baseline path.
+
+- **Prompt:** append the marker line to `notes.txt` (override with `E2E_NONGIT_PROMPT`).
+- **Driver argv:** the same read-write argv as the edit recipe — the target just isn't a git repo.
+- **No-baseline warning:** the driver WARNS `--target is not a git repo; no baseline to diff or
+  revert after writes` on stderr — the recipe asserts it is captured in `driver.err`.
+- **Suppressed verification:** with no git baseline the driver SUPPRESSES the
+  `===== git changes after write =====` block — the recipe asserts it is absent from stdout.
+- **Opt-in/skip:** unset `EXTERNAL_AGENTS_LIVE` → skip + exit 0.
+
+```bash
+EXTERNAL_AGENTS_LIVE=1 bash tests/e2e/edit-non-git.sh codex
+```
+
+## Per-agent reproducibility checklist
+
+To reproduce the full Phase 3 evidence for one agent `<a>`:
+
+1. Install and authenticate the agent's CLI; confirm with `run-agent.sh --check` (or `--discover`).
+2. Run all recipes via the entry point, or one recipe directly:
+   ```bash
+   EXTERNAL_AGENTS_LIVE=1 bash tests/e2e/run-e2e.sh
+   ```
+3. Inspect the per-recipe evidence under `$EXTERNAL_AGENTS_OUT/e2e/<recipe>/<a>/` — each carries
+   `argv` (masked launch argv), `run.txt` (rc/sec/bytes/transcript path), and `driver.err`. The
+   expected per-recipe outcome:
+
+   | recipe | expected evidence |
+   |--------|-------------------|
+   | `review-readonly` | `rc=0`, non-empty transcript; `post.status` **empty** for enforced agents (agy best-effort observed) |
+   | `edit-readwrite`  | `rc=0`, a changed file (`post.status` non-empty) and the `===== git changes after write =====` block in `driver.out` naming it |
+   | `edit-non-git`    | `rc=0`, the no-baseline warning in `driver.err`, and **no** post-write block in `driver.out` |
+
+4. Net expectation: enforced agents leave the read-only fixture byte-identical; the write recipes
+   produce a changed file (git target) and the documented warning + suppressed block (non-git target).
