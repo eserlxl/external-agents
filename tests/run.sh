@@ -295,6 +295,58 @@ else
   bad "policy-decoupling: the agent-set array literal lives once, in the ADAPTER_AGENTS registry" "ADAPTER_AGENTS count: $pd_reg"
 fi
 
+echo "== pipeline per-stage safety + artifacts (gates enforced every stage; argv == dry-run; redaction) =="
+# run-pipeline.sh invokes the FULL driver per stage, so every stage independently enforces the
+# containment / non-cwd --yes gates, redaction, and the per-run records — the pipeline is never a back
+# door. Prove it: (a) a write pipeline to a non-cwd target WITHOUT --yes is refused at stage 1; (b) each
+# stage's masked argv == its --dry-run argv; (c) a secret a stage emits is redacted in its artifact AND
+# in the seed to the next stage.
+if command -v timeout >/dev/null 2>&1 && command -v python3 >/dev/null 2>&1; then
+  PIPE="$ROOT/scripts/run-pipeline.sh"
+  psstub="$(mktemp -d)"
+  printf '#!/usr/bin/env bash\necho "codex-out"\n'  >"$psstub/codex";  chmod +x "$psstub/codex"
+  printf '#!/usr/bin/env bash\necho "claude-out"\n' >"$psstub/claude"; chmod +x "$psstub/claude"
+  pstgt="$(mktemp -d)"
+  # (a) the non-cwd --yes gate is enforced at the pipeline stage: write to a non-cwd target WITHOUT --yes.
+  psbase="$(mktemp -d)"
+  psout="$(PATH="$psstub:$PATH" EXTERNAL_AGENTS_OUT="$psbase" bash "$PIPE" --pipeline codex,claude --prompt p --write --target "$pstgt" 2>&1)"
+  assert_contains "pipeline: non-cwd write WITHOUT --yes refused at stage 1 (gate enforced per stage)" "$psout" "completed-through-stage 0"
+  rm -rf "$psbase"
+  # (b) with --yes the pipeline proceeds; each stage records meta/argv and the masked argv == its dry-run argv.
+  psbase="$(mktemp -d)"
+  PATH="$psstub:$PATH" EXTERNAL_AGENTS_OUT="$psbase" bash "$PIPE" --pipeline codex,claude --prompt p --write --yes --target "$pstgt" >/dev/null 2>&1
+  pspd="$(find "$psbase" -maxdepth 1 -type d -name 'pipeline-*' | head -1)"
+  ps_ok=1
+  for s in 1-codex 2-claude; do
+    psa="${s#*-}"
+    { [ -f "$pspd/$s/$psa.meta.json" ] && [ -f "$pspd/$s/$psa.argv" ]; } || ps_ok=0
+    pslive="$(cat "$pspd/$s/$psa.argv" 2>/dev/null)"
+    psdry="$(PATH="$psstub:$PATH" bash "$RUN" --agent "$psa" --write --yes --target "$pstgt" --dry-run --prompt p 2>/dev/null | sed -nE "s/^  ${psa} +//p")"
+    { [ -n "$pslive" ] && [ "$pslive" = "$psdry" ]; } || ps_ok=0
+  done
+  if [ "$ps_ok" = "1" ]; then
+    ok "pipeline: each stage records meta/argv and masked argv == its --dry-run argv"
+  else
+    bad "pipeline: each stage records meta/argv and masked argv == its --dry-run argv" "stage record/argv mismatch"
+  fi
+  rm -rf "$psbase"
+  # (c) redaction per stage: a stage that emits a secret has it masked in its artifact AND in the seed.
+  rdstub="$(mktemp -d)"
+  printf '#!/usr/bin/env bash\necho "leak sk-AAAAAAAAAAAAAAAAAAAAAAAA"\n' >"$rdstub/codex"; chmod +x "$rdstub/codex"
+  printf '#!/usr/bin/env bash\necho "S2:$*"\n' >"$rdstub/claude"; chmod +x "$rdstub/claude"
+  rdbase="$(mktemp -d)"
+  PATH="$rdstub:$PATH" EXTERNAL_AGENTS_OUT="$rdbase" bash "$PIPE" --pipeline codex,claude --prompt p --read-only --target "$pstgt" >/dev/null 2>&1
+  rdpd="$(find "$rdbase" -maxdepth 1 -type d -name 'pipeline-*' | head -1)"
+  s1md="$(cat "$rdpd/1-codex/codex.md" 2>/dev/null)"
+  s2md="$(cat "$rdpd/2-claude/claude.md" 2>/dev/null)"
+  case "$s1md" in *"<REDACTED>"*) ok "pipeline: stage 1 secret masked in its artifact";; *) bad "pipeline: stage 1 secret masked in its artifact" "no <REDACTED> in stage 1 .md";; esac
+  case "$s1md" in *"sk-AAAAAAAA"*) bad "pipeline: stage 1 raw secret not persisted" "raw secret leaked in stage 1 .md";; *) ok "pipeline: stage 1 raw secret not persisted";; esac
+  case "$s2md" in *"sk-AAAAAAAA"*) bad "pipeline: stage 2 seed carries no raw secret (seeded from redacted)" "raw secret reached stage 2";; *) ok "pipeline: stage 2 seed carries no raw secret (seeded from redacted)";; esac
+  rm -rf "$rdstub" "$rdbase" "$psstub" "$pstgt"
+else
+  skip "pipeline per-stage safety oracle (timeout/python3 unavailable)"
+fi
+
 echo "== agents.json schema validation (draft-07 contract) =="
 if python3 -c 'import jsonschema' 2>/dev/null; then
   # schema_check FILE -> "OK" if FILE validates against schema/agents.schema.json, else "REJECTED".
