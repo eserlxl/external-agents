@@ -22,7 +22,6 @@ set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 PLUGIN_JSON="$ROOT/.claude-plugin/plugin.json"
-CODEX_PLUGIN_JSON="$ROOT/.codex-plugin/plugin.json"
 CHANGELOG="$ROOT/CHANGELOG.md"
 README="$ROOT/README.md"
 
@@ -127,7 +126,6 @@ DATE="$(date -u +%Y-%m-%d)"
 # --dry-run, which writes nothing.)
 if [ -z "$DRY_RUN" ]; then
   _bump_targets=("$PLUGIN_JSON" "$CHANGELOG")
-  [ -f "$CODEX_PLUGIN_JSON" ] && _bump_targets+=("$CODEX_PLUGIN_JSON")
   [ -f "$README" ] && _bump_targets+=("$README")
   for _skill in "$ROOT"/skills/*/SKILL.md; do
     [ -f "$_skill" ] && _bump_targets+=("$_skill")
@@ -148,9 +146,9 @@ fi
 
 # --- Update JSON manifests -------------------------------------------------
 if [ -z "$DRY_RUN" ]; then
-python3 - "$PLUGIN_JSON" "$CODEX_PLUGIN_JSON" "$NEW" <<'PY'
+python3 - "$PLUGIN_JSON" "$NEW" <<'PY'
 import json, os, sys, tempfile
-plugin_path, codex_plugin_path, new = sys.argv[1:4]
+plugin_path, new = sys.argv[1:3]
 
 def atomic_write(path, data):
     # Same-directory temp + os.replace. A plain open(path, "w") truncates the file
@@ -176,15 +174,6 @@ with open(plugin_path) as f:
     plugin = json.load(f)
 plugin["version"] = new
 atomic_write(plugin_path, json.dumps(plugin, indent=2) + "\n")
-
-try:
-    with open(codex_plugin_path) as f:
-        codex_plugin = json.load(f)
-except FileNotFoundError:
-    codex_plugin = None
-if codex_plugin is not None:
-    codex_plugin["version"] = new
-    atomic_write(codex_plugin_path, json.dumps(codex_plugin, indent=2) + "\n")
 PY
 fi
 
@@ -347,7 +336,6 @@ if [ -n "$DRY_RUN" ]; then
 else
   echo "Bumped: $CURRENT -> $NEW"
   echo "  updated $(relpath "$PLUGIN_JSON")"
-  [ -f "$CODEX_PLUGIN_JSON" ] && echo "  updated $(relpath "$CODEX_PLUGIN_JSON")"
   [ -n "$SKILLS_SYNCED" ] && echo "  updated$SKILLS_SYNCED"
   [ -n "$README_SYNCED" ] && echo "  updated $README_SYNCED (version badge)"
   echo "  changelog entry added ($DATE)"
