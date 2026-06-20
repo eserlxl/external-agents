@@ -216,6 +216,8 @@ smoke_agent() {  # agent
   mutation_outcome "$a" "$changes" || rv=1
   # 3. transcript success: the CLI ran and responded (rc==0 && bytes>0).
   transcript_ok "$proj" "$a" || rv=1
+  # Surface the REAL outcome class the driver recorded (read before the output dir is removed).
+  LAST_ERROR_CLASS="$(meta_error_class "$proj" "$a")"
   rm -rf "$sb" "$out"
   return "$rv"
 }
@@ -387,11 +389,42 @@ write_provenance_record() {
   echo "live smoke: provenance recorded at $LIVE_OUT/provenance.txt"
 }
 
+# meta_error_class PROJ AGENT — print the error_class the driver recorded for AGENT under PROJ, or
+# empty if no record. Lets smoke_agent surface the REAL per-agent outcome class as live evidence.
+meta_error_class() {
+  local f="$1/$2.meta.json"
+  [ -f "$f" ] || return 0
+  if command -v python3 >/dev/null 2>&1; then
+    python3 -c 'import json,sys
+try:
+    print(json.load(open(sys.argv[1])).get("error_class",""))
+except Exception:
+    pass' "$f" 2>/dev/null
+  else
+    grep -oE '"error_class":"[^"]*"' "$f" 2>/dev/null | head -1 | sed -E 's/.*:"([^"]*)"/\1/'
+  fi
+}
+
+# write_error_class_record — write a deterministic per-agent error_class record (one "<agent>  <class>"
+# line per known agent) to $LIVE_OUT/error-class.txt, so the REAL per-agent outcome class from an armed
+# run is auditable live evidence ALONGSIDE status.txt (kept separate so status.txt stays two-field).
+# Reads AGENT_ERROR_CLASS (dynamic scope, from main). Control-plane only — a closed-set class token,
+# never transcript text. Best-effort: never fails the run.
+write_error_class_record() {
+  local kn
+  mkdir -p "$LIVE_OUT" 2>/dev/null || return 0
+  : >"$LIVE_OUT/error-class.txt" 2>/dev/null || return 0
+  for kn in $KNOWN_AGENTS; do
+    printf '%-7s %s\n' "$kn" "${AGENT_ERROR_CLASS[$kn]:-n/a}" >>"$LIVE_OUT/error-class.txt"
+  done
+  echo "live smoke: per-agent error_class recorded at $LIVE_OUT/error-class.txt"
+}
+
 # main — the live run. Runs ONLY when this script is executed directly (see the guard at the
 # bottom); sourcing the file for unit tests defines the helpers above without running this.
 main() {
   local LIVE="${EXTERNAL_AGENTS_LIVE:-0}" kn
-  local -A AGENT_STATUS
+  local -A AGENT_STATUS AGENT_ERROR_CLASS
   if [ "$LIVE" != "1" ]; then
     echo "live smoke skipped (set EXTERNAL_AGENTS_LIVE=1)"
     for kn in $KNOWN_AGENTS; do AGENT_STATUS[$kn]=skipped-not-opted-in; done
@@ -469,6 +502,8 @@ EOF
       done
     done
     smoke_agent "$a" || agent_fail=1
+    # Record the REAL outcome class the driver classified for this agent (live readiness evidence).
+    AGENT_ERROR_CLASS[$a]="${LAST_ERROR_CLASS:-unknown}"
     if [ "$agent_fail" -eq 0 ]; then AGENT_STATUS[$a]=live-verified; else AGENT_STATUS[$a]=failed; fi
     fails=$((fails + agent_fail))
   done
@@ -484,6 +519,7 @@ EOF
   esac
 
   write_status_record
+  write_error_class_record   # the real per-agent error_class from this armed run (alongside status.txt)
   if [ "$fails" -gt 0 ]; then
     echo "live smoke: $fails agent(s) failed live checks for ${verify[*]}" >&2
     return 1
