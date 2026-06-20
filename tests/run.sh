@@ -873,6 +873,32 @@ else
 fi
 rm -rf "$srdir"
 
+echo "== agy quota-schema evidence is sanitised (keys/types only, no value/account-id) =="
+# quota_probe writes $LIVE_OUT/agy-quota-schema.txt as a content-free drift detector for the keys
+# agy_model_status reads — key NAMES, types, and array item-key NAMES only, NEVER a percentage value
+# or account identifier. Drive the REAL writer offline (sourced quota_probe, synthetic quota payload
+# via AGY_QUOTA_CMD) with a payload carrying a percentage and an account-id-shaped value, and assert
+# neither leaks; an empty/unusable payload must be recorded as 'unavailable' (degraded, non-failing).
+if command -v timeout >/dev/null 2>&1 && command -v python3 >/dev/null 2>&1; then
+  qs_lo="$(mktemp -d)"; qs_json="$(mktemp)"
+  printf '%s' '{"label":"acct-SECRET-9999","models":[{"label":"Claude","remainingPercentage":37.5,"isExhausted":false}]}' >"$qs_json"
+  LIVE_OUT="$qs_lo/live-smoke" AGY_QUOTA_CMD="cat $qs_json" EXTERNAL_AGENTS_AGY_QUOTA_CMD="cat $qs_json" \
+    quota_probe >/dev/null 2>&1 || true
+  qs_shape="$(cat "$qs_lo/live-smoke/agy-quota-schema.txt" 2>/dev/null)"
+  assert_contains "quota-schema: records the read key names (drift detector)" "$qs_shape" "remainingPercentage"
+  assert_contains "quota-schema: records array item-key names"                 "$qs_shape" "item-keys="
+  case "$qs_shape" in *37.5*)             bad "quota-schema: no percentage VALUE leaks"   "percentage value 37.5 leaked into evidence";;  *) ok "quota-schema: no percentage VALUE leaks";;  esac
+  case "$qs_shape" in *acct-SECRET-9999*) bad "quota-schema: no account identifier leaks" "account id leaked into evidence";;             *) ok "quota-schema: no account identifier leaks";; esac
+  qs_lo2="$(mktemp -d)"
+  LIVE_OUT="$qs_lo2/live-smoke" AGY_QUOTA_CMD="true" EXTERNAL_AGENTS_AGY_QUOTA_CMD="true" \
+    quota_probe >/dev/null 2>&1 || true
+  qs_empty="$(cat "$qs_lo2/live-smoke/agy-quota-schema.txt" 2>/dev/null)"
+  assert_contains "quota-schema: empty quota output -> 'unavailable'" "$qs_empty" "unavailable"
+  rm -f "$qs_json"; rm -rf "$qs_lo" "$qs_lo2"
+else
+  skip "agy quota-schema sanitisation oracle (timeout/python3 unavailable)"
+fi
+
 echo "== bump-version.sh lockstep write (mktemp fixture, real repo untouched) =="
 ft="$(mktemp -d)"
 mkdir -p "$ft/scripts" "$ft/.claude-plugin" "$ft/skills/external-agents"
