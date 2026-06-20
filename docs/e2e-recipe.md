@@ -50,6 +50,17 @@ evidence never drifts from what `run-agent.sh` actually produces:
 The pre-run evidence a recipe adds: the fixture path, its initial commit sha, and `git status
 --porcelain` (clean) before the run — so the after-state is comparable against a known baseline.
 
+### Read-only enforcement in the recipes
+
+A read-only recipe checks the fixture's post-run `git status --porcelain`. For the **enforced**
+agents (`codex`/`claude`/`cursor`) an empty status is asserted — any change is a **hard failure**.
+For **agy**, whose read-only mode is **best-effort** (`agy --sandbox` is not a hard write barrier),
+the recipe instead **captures the driver's best-effort warning** and records the **observed**
+mutation status as evidence **without asserting a hard guarantee** — a change does not fail the
+recipe. agy read-only is therefore **never** claimed as enforced anywhere in the recipes; for a hard
+guarantee use codex/claude/cursor or point the run at a throwaway copy (which is exactly what these
+recipes do).
+
 ## Recipes
 
 Each recipe is a self-contained script under `tests/e2e/`, run via the `tests/e2e/run-e2e.sh`

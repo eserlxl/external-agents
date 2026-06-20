@@ -365,7 +365,9 @@ Beyond the smoke harness, reproducible per-agent **delegation recipes** live und
 read-only review, read-write edit, and a non-git write — each driving a real agent against a
 disposable git fixture and capturing uniform before/after evidence. They share the same
 `EXTERNAL_AGENTS_LIVE` opt-in and skip-when-absent behavior, and are never part of the offline CI
-gate. The shared contract and per-recipe steps are documented in
+gate. The read-only recipes assert the enforced agents (`codex`/`claude`/`cursor`) leave the fixture
+unchanged, while **agy** read-only is captured as **best-effort** (observed, never asserted as
+enforced). The shared contract and per-recipe steps are documented in
 [docs/e2e-recipe.md](docs/e2e-recipe.md).
 
 ## Files

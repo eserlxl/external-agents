@@ -40,8 +40,9 @@ for a in "${agents[@]}"; do
   fx="$(e2e_make_fixture)" || { echo "e2e review-readonly: $a  FAIL: could not create fixture" >&2; rv=1; continue; }
   ev="$E2E_OUT/$a"; out="$(mktemp -d)"; proj="$out/$(basename "$fx")"
   e2e_capture_pre "$fx" "$ev"
+  # Capture the driver's own stderr (NOTEs, model line, agy best-effort warning) as evidence.
   EXTERNAL_AGENTS_OUT="$out" "$RUN" --agent "$a" --read-only --target "$fx" \
-    --timeout "$TIMEOUT" --prompt "$REVIEW_PROMPT" >/dev/null 2>&1
+    --timeout "$TIMEOUT" --prompt "$REVIEW_PROMPT" >/dev/null 2>"$ev/driver.err"
   e2e_capture_post "$fx" "$proj" "$a" "$ev"
   rc="$(cat "$proj/$a.rc" 2>/dev/null || echo '?')"
   bytes=$(wc -c <"$proj/$a.md" 2>/dev/null | tr -d ' '); bytes="${bytes:-0}"
@@ -59,6 +60,20 @@ for a in "${agents[@]}"; do
         sed 's/^/    /' "$ev/post.status" >&2; rv=1
       else
         echo "e2e review-readonly: $a  no-mutation: fixture unchanged (enforced read-only)"
+      fi;;
+    agy)
+      # agy read-only is best-effort (--sandbox is NOT a hard write barrier): capture the
+      # driver's best-effort warning and record the OBSERVED mutation status WITHOUT asserting a
+      # hard guarantee — a change does NOT fail the recipe.
+      if grep -q "best-effort" "$ev/driver.err" 2>/dev/null; then
+        echo "e2e review-readonly: agy  best-effort warning captured (read-only is not enforced)"
+      else
+        echo "e2e review-readonly: agy  NOTE: expected best-effort warning not found in driver stderr" >&2
+      fi
+      if [ -s "$ev/post.status" ]; then
+        echo "e2e review-readonly: agy  best-effort: fixture CHANGED (observed, not a guarantee)"
+      else
+        echo "e2e review-readonly: agy  best-effort: fixture unchanged (observed, not enforced)"
       fi;;
   esac
   rm -rf "$fx" "$out"
