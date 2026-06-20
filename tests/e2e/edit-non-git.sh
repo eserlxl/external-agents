@@ -57,6 +57,12 @@ for a in "${agents[@]}"; do
   else
     echo "e2e edit-non-git: $a  FAIL: missing the driver's no-baseline warning" >&2; rv=1
   fi
+  # And the driver must SUPPRESS the post-write verification block on a non-git target (no baseline).
+  if grep -q "git changes after write" "$ev/driver.out" 2>/dev/null; then
+    echo "e2e edit-non-git: $a  FAIL: post-write verification block unexpectedly present on a non-git target" >&2; rv=1
+  else
+    echo "e2e edit-non-git: $a  post-write block correctly suppressed (non-git target)"
+  fi
   rm -rf "$ng" "$out"
 done
 exit "$rv"
