@@ -266,6 +266,17 @@ assert_contains "degradation: unconfirmable quota emits the 'unknown' NOTE" "$de
 case "$deg_out" in *"$PRIMARY"*) bad "degradation: the unconfirmed primary is never selected" "primary '$PRIMARY' resolved without quota confirmation";; *) ok "degradation: the unconfirmed primary is never selected";; esac
 rm -f "$stub"
 
+echo "== agy never spends quota: read-only quota command, wakeup never invoked =="
+# The agy fallback decision consults the quota CLI READ-ONLY (`antigravity-usage --json`); it must
+# NEVER call the quota-SPENDING `wakeup`. Pin both halves offline (mirroring the live probe's *wakeup*
+# rejection): (1) the driver's default resolved quota command is the read-only --json query with no
+# `wakeup` token; (2) no ACTIVE (non-comment) driver line invokes `wakeup` anywhere.
+qc_line="$(grep -E '^AGY_QUOTA_CMD=' "$ROOT/scripts/run-agent.sh" | head -1)"
+assert_contains "never-spend-quota: default quota command is the read-only --json query" "$qc_line" "antigravity-usage --json"
+case "$qc_line" in *wakeup*) bad "never-spend-quota: default quota command has no 'wakeup' token" "wakeup in resolved quota command: $qc_line";; *) ok "never-spend-quota: default quota command has no 'wakeup' token";; esac
+qc_active_wakeup="$(grep -vE '^[[:space:]]*#' "$ROOT/scripts/run-agent.sh" | grep -nE 'wakeup' | head -1)"
+if [ -z "$qc_active_wakeup" ]; then ok "never-spend-quota: no active driver line invokes 'wakeup'"; else bad "never-spend-quota: no active driver line invokes 'wakeup'" "active wakeup reference: $qc_active_wakeup"; fi
+
 echo "== per-agent fan-out record fields (stub fan-out, no live CLI) =="
 # The collect loop builds a control-plane record per agent ($OUT/<a>.record): tab-delimited
 # agent/model/tier/effort/mode/rc/sec/bytes/fallback. Assert the fields for a multi-agent shape
