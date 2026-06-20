@@ -25,12 +25,31 @@ freely during development; tag and push only at the milestone.
    bash tests/run.sh
    ```
 
-2. **Preview the bump (`--dry-run`).** Confirm the computed version and the changelog block before
-   touching any file:
+2. **Preview the bump (`--dry-run`).** The bump level is the **first positional**; append
+   `--dry-run` to preview without writing anything. Confirm the computed version and the changelog
+   block before touching any file:
 
    ```bash
-   bash scripts/bump-version.sh --dry-run <major|minor|patch|X.Y.Z> -m "one-line changelog note"
+   bash scripts/bump-version.sh <major|minor|patch|X.Y.Z> --dry-run -m "one-line changelog note"
    ```
+
+   The preview prints the current→new version, the CHANGELOG block it would prepend, and which
+   lockstep surfaces it would sync. For example, `minor --dry-run -m example` on `0.6.0` prints:
+
+   ```text
+   dry-run: 0.6.0 -> 0.7.0 (files not modified)
+
+   Would add to CHANGELOG.md:
+   ## [0.7.0] - <today, UTC>
+
+   ### Changed
+   - example
+     would sync skills/external-agents/SKILL.md
+     would update README badge (README.md)
+   ```
+
+   Re-run until the version and note read correctly; nothing is written until you drop `--dry-run`.
+   (The level is the first positional — `<level> --dry-run`, **not** `--dry-run <level>`.)
 
 3. **Run the real bump.** Drop `--dry-run` to write the lockstep edits and prepend the CHANGELOG
    entry:
