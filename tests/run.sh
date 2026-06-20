@@ -945,6 +945,19 @@ else
   bad "e2e_make_fixture produced a fixture for capture" "no path"
 fi
 
+echo "== e2e recipe dispatch drift guard (run-e2e.sh list == recipe files) =="
+# run-e2e.sh hardcodes the recipes it dispatches (`for recipe in ...`); a recipe file added without
+# updating that list — or removed while still listed — would be silently never run. Assert the
+# dispatch token set equals the set of tests/e2e/*.sh recipe basenames (excluding run-e2e.sh itself).
+disp="$(grep -oE 'for recipe in [^;]+' "$ROOT/tests/e2e/run-e2e.sh" | sed -E 's/^for recipe in +//')"
+disp_sorted="$(printf '%s' "$disp" | tr ' ' '\n' | grep -v '^$' | sort -u)"
+files_sorted="$(for f in "$ROOT"/tests/e2e/*.sh; do b="$(basename "$f")"; [ "$b" = "run-e2e.sh" ] && continue; printf '%s\n' "${b%.sh}"; done | sort -u)"
+if [ -n "$disp_sorted" ] && [ "$disp_sorted" = "$files_sorted" ]; then
+  ok "e2e dispatch list matches the recipe files ($(printf '%s' "$disp"))"
+else
+  bad "e2e dispatch list matches the recipe files" "dispatch=[$(printf '%s' "$disp_sorted" | paste -sd' ' -)] files=[$(printf '%s' "$files_sorted" | paste -sd' ' -)]"
+fi
+
 echo "== opt-in gate: live/e2e harnesses are offline no-ops without the arming switch =="
 # The live-smoke + e2e recipe scripts must launch NOTHING and exit 0 when EXTERNAL_AGENTS_LIVE is
 # unset — the invariant that keeps the real agent CLIs out of the offline gate. Run each with the
