@@ -359,6 +359,15 @@ cat "${EXTERNAL_AGENTS_OUT:-$HOME/.external-agents/logs}"/live-smoke/status.txt
 That transcript dir is **outside the repository** — raw transcripts (which can carry free-text or
 PII) are **never committed**; only the offline, content-free tests live in the repo.
 
+### End-to-end recipes (opt-in)
+
+Beyond the smoke harness, reproducible per-agent **delegation recipes** live under `tests/e2e/` —
+read-only review, read-write edit, and a non-git write — each driving a real agent against a
+disposable git fixture and capturing uniform before/after evidence. They share the same
+`EXTERNAL_AGENTS_LIVE` opt-in and skip-when-absent behavior, and are never part of the offline CI
+gate. The shared contract and per-recipe steps are documented in
+[docs/e2e-recipe.md](docs/e2e-recipe.md).
+
 ## Files
 
 ```
@@ -370,5 +379,8 @@ external-agents/
 ├── scripts/run-agent.sh            # the deterministic driver (all the logic)
 ├── scripts/bump-version.sh         # lockstep version bumper
 ├── tests/run.sh                    # offline test suite (run-agent + bump-version)
+├── tests/live-smoke.sh             # opt-in live smoke harness (EXTERNAL_AGENTS_LIVE)
+├── tests/e2e/                      # opt-in end-to-end delegation recipes
+├── docs/e2e-recipe.md              # the shared E2E recipe contract
 └── .github/workflows/ci.yml        # CI: shellcheck + tests on push/PR
 ```

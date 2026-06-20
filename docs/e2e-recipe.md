@@ -1,0 +1,59 @@
+<!-- SPDX-FileCopyrightText: 2026 Eser KUBALI -->
+<!-- SPDX-License-Identifier: GPL-3.0-or-later -->
+
+# End-to-end delegation recipes
+
+This document is the **shared contract** every per-agent end-to-end (E2E) recipe under
+`tests/e2e/` conforms to. An E2E recipe drives one real external agent through `run-agent.sh`
+against a **disposable throwaway fixture** and captures uniform before/after evidence, so a
+maintainer can reproduce a delegation and inspect exactly what happened — without ever touching a
+real repository or shipping private code.
+
+Like the [live smoke harness](../README.md#live-smoke-opt-in), the E2E recipes are **opt-in** and
+**never part of the offline CI gate** (which stays `shellcheck` + `tests/run.sh`). They launch real
+CLIs (cost + ship the tree to third-party providers), so they run only when explicitly armed.
+
+## The shared contract
+
+Every recipe MUST:
+
+1. **Gate on the single opt-in switch.** Reuse Phase 2's gating shape: the
+   `EXTERNAL_AGENTS_LIVE` environment variable (unset/`0` skips every live step and exits 0;
+   `1` arms the recipe). A recipe also skips, cleanly and non-fatally, any agent whose CLI is not
+   on `PATH` (per-agent `command -v`). Absence of a CLI or the opt-in is **never a failure**.
+
+2. **Target a deterministic, disposable git fixture** — never the real repo. The fixture is a
+   freshly git-initialized temp tree (created under `$TMPDIR`, guaranteed outside the plugin tree)
+   with a **known seed file** and exactly **one initial commit**, so before/after diffs are
+   deterministic. The helper that builds it lives in `tests/e2e/lib/fixture.sh`.
+
+3. **Capture the standard before/after evidence** into a throwaway evidence directory (under
+   `EXTERNAL_AGENTS_OUT`). The helper lives in `tests/e2e/lib/capture.sh`. The evidence fields are
+   exactly the driver's own outputs (see below) plus the fixture's pre-run git state.
+
+## Evidence fields (match the driver's actual outputs)
+
+The driver emits these per run; an E2E recipe records the same fields verbatim, so the recorded
+evidence never drifts from what `run-agent.sh` actually produces:
+
+| field | source in `scripts/run-agent.sh` | meaning |
+|-------|----------------------------------|---------|
+| resolved argv | `--dry-run` printer / the `$OUT/<agent>.argv` record | the exact launch argv, with the prompt masked to `<PROMPT>` (secret-free) |
+| `rc` | collect loop (`$OUT/<agent>.rc`) | the agent process exit code (`PIPESTATUS[0]`) |
+| `sec` | collect loop (`$OUT/<agent>.sec`) | wall-clock seconds the run took |
+| `bytes` | collect loop (`wc -c <$OUT/<agent>.md`) | size of the redacted transcript |
+| transcript | `$OUT/<agent>.md` (redacted) | the agent's response, after best-effort secret redaction |
+| `===== <agent> (rc=… …s … bytes) =====` | collect loop header | the per-agent banner |
+| `===== git changes after write (in <target>) =====` | post-write block | present only on a **write** run against a **git** target |
+| `git status --porcelain` / `git diff --stat` | post-write block | what actually changed in the target tree after a write |
+
+The pre-run evidence a recipe adds: the fixture path, its initial commit sha, and `git status
+--porcelain` (clean) before the run — so the after-state is comparable against a known baseline.
+
+## Recipes
+
+Each recipe is a self-contained script under `tests/e2e/`, run via the `tests/e2e/run-e2e.sh`
+entry point. The per-recipe sections (read-only review, read-write edit, non-git write) are
+documented below as they are added.
+
+<!-- per-recipe sections are appended by the Phase 3.2–3.4 plan items -->
