@@ -4,7 +4,47 @@ All notable changes to external-agents are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/),
 and this project adheres to [Semantic Versioning](https://semver.org/).
 
-## [Unreleased]
+## [0.7.0] - 2026-06-20
+
+A feature release focused on **machine-readable run output, durable run history, and safety** —
+all additive and backward-compatible (every 0.6.0 flag, default, and `agents.json` key is preserved).
+
+### Added
+- **`--json` flag.** Emits a machine-readable JSON run summary to stdout *in addition to* the
+  (unchanged) human output — run-level fields plus one control-plane object per agent and the
+  agreement signal, with no transcript content.
+- **Per-run metadata record.** Every run writes one structured `<agent>.meta.json` next to the
+  transcript, capturing resolved control-plane facts (agent, model, tier, effort, mode, target,
+  rc, sec, bytes, fallback flag, launch timestamp) — never transcript text.
+- **Run index.** An append-only JSON Lines history at `<base>/index.jsonl` accruing one row per
+  agent per run (grouped by a run id), built only from control-plane facts and readable with any
+  JSON tool.
+- **Cross-agent fan-out summary.** `--agent all` prints a compact per-agent digest table (agent,
+  rc, model, tier, sec, bytes, fallback) after the verbatim transcripts, closed by a deterministic
+  `all-ok` / `mixed` / `all-fail` agreement line (plus write-fan-out and read-only no-mutation notes).
+- **Best-effort cost/latency signals.** When an agent CLI prints a recognizable token count or
+  dollar cost, the driver lifts it into an optional `signals` object on the per-run record and index
+  row; an absent signal is the explicit `"unavailable"` marker, never a fabricated number.
+- **`--discover` flag.** Prints one machine-readable line per known agent
+  (`<agent> <present|missing> <bin>`) so a harness can scope itself to the installed set;
+  config-independent like `--check`.
+- **`--version` / `-V` flag.** Prints the plugin version and exits (no `agents.json` required).
+- **`agents.json` JSON Schema** (`schema/agents.schema.json`, draft-07) — a published config
+  contract, validated in CI.
+- **Masked launch-argv record** (`<agent>.argv`), byte-identical to `--dry-run` and never
+  containing the prompt text.
+
+### Changed
+- **Best-effort transcript secret-redaction.** Agent stdout/stderr is run through a length-bounded
+  redaction stage that masks token-shaped strings (`sk-`/`pk-`, `gh*_`/`github_pat_`, `xox*-`,
+  `AKIA`, `Bearer` tokens, `KEY=`/`TOKEN=`/`SECRET=`/`PASSWORD=` assignments, and long high-entropy
+  runs) as `<REDACTED>` before any transcript is persisted or echoed. Best-effort, not a guarantee;
+  the structural output contract (`=====` headers, the ok/failed tally) is preserved.
+- Plugin manifest now declares accurate `repository` and `homepage` fields.
+
+### Fixed
+- `--timeout` is validated as a positive integer of seconds up front, with a clear error message,
+  instead of deferring to an opaque per-agent timeout failure at launch.
 
 ### Removed
 - Dead `.codex-plugin/plugin.json` reference in `scripts/bump-version.sh`. The repository ships only
@@ -12,6 +52,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   ships — lockstep across `.claude-plugin/plugin.json`, `skills/*/SKILL.md`, the README version
   badge, and `CHANGELOG.md`. A regression guard in `tests/run.sh` keeps the dead reference from
   returning.
+
+### Security
+- Added a **threat model** (`docs/threat-model.md`) enumerating trust boundaries, protected assets,
+  and mitigating controls, including a published **per-CLI read-only enforcement matrix** (agy
+  best-effort vs codex/claude/cursor enforced).
+- Added a **security policy** (`SECURITY.md`) with private vulnerability reporting and supported-version scope.
+- Documented and bounded transcript-redaction limits, and reaffirmed the read-only enforcement guarantees.
+
+### Documentation
+- Authored a **release runbook** (`RELEASING.md`) — clean-tree → dry-run → bump → tag → push, with
+  a tag-equals-version verification gate and the release cadence heuristic.
+- Authored a **contributor guide** (`CONTRIBUTING.md`) cross-linked with the README, CI, and runbook.
+- Documented the new run surfaces in the README (`--json`, per-run metadata, run index, cost/latency
+  signals, cross-agent summary, `EXTERNAL_AGENTS_OUT`, and the schema/config contract), clarified the
+  presence-vs-live boundary of `--check`, and published a consolidated E2E recipe (`docs/e2e-recipe.md`).
+
+### Tests / CI
+- Added a **GitHub Actions CI** workflow, offline by design: shellcheck of the driver scripts,
+  `agents.json` schema validation, and the CLI-free offline suite (never invokes live/e2e harnesses).
+- Added an **extensive offline suite** (`tests/run.sh`) covering config resolution, malformed-config
+  resilience, the safety gates, redaction (positive/negative/false-positive), the enforcement-matrix
+  accuracy, jq/python3 backend parity (config reads *and* JSON emitters), and `bump-version.sh`.
+- Added an **opt-in live-smoke harness** (`tests/live-smoke.sh`, gated by `EXTERNAL_AGENTS_LIVE`) and
+  **stub-driven offline e2e recipes** (`tests/e2e/`).
 
 ## [0.6.0] - 2026-06-19
 
