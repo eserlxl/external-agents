@@ -945,6 +945,25 @@ else
   bad "e2e_make_fixture produced a fixture for capture" "no path"
 fi
 
+echo "== opt-in gate: live/e2e harnesses are offline no-ops without the arming switch =="
+# The live-smoke + e2e recipe scripts must launch NOTHING and exit 0 when EXTERNAL_AGENTS_LIVE is
+# unset — the invariant that keeps the real agent CLIs out of the offline gate. Run each with the
+# switch cleared (and a hermetic EXTERNAL_AGENTS_OUT so live-smoke's status record never touches
+# $HOME) and assert the documented skip line plus exit 0.
+optin_out="$(mktemp -d)"
+optin_gate() {  # script-relpath  skip-needle
+  local rel="$1" needle="$2" out rc
+  out="$(env -u EXTERNAL_AGENTS_LIVE EXTERNAL_AGENTS_OUT="$optin_out" bash "$ROOT/$rel" 2>/dev/null)"; rc=$?
+  assert_exit     "opt-in gate: $rel exits 0 without the switch" 0 "$rc"
+  assert_contains "opt-in gate: $rel prints its skip line"       "$out" "$needle"
+}
+optin_gate "tests/live-smoke.sh"          "live smoke skipped (set EXTERNAL_AGENTS_LIVE=1)"
+optin_gate "tests/e2e/run-e2e.sh"         "e2e recipes skipped (set EXTERNAL_AGENTS_LIVE=1)"
+optin_gate "tests/e2e/review-readonly.sh" "e2e review-readonly skipped (set EXTERNAL_AGENTS_LIVE=1)"
+optin_gate "tests/e2e/edit-readwrite.sh"  "e2e edit-readwrite skipped (set EXTERNAL_AGENTS_LIVE=1)"
+optin_gate "tests/e2e/edit-non-git.sh"    "e2e edit-non-git skipped (set EXTERNAL_AGENTS_LIVE=1)"
+rm -rf "$optin_out"
+
 echo "== shellcheck (regression guard) =="
 if command -v shellcheck >/dev/null 2>&1; then
   # Lint the driver scripts AND the test harness itself — the harness is the largest body of
