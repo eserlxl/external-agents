@@ -630,6 +630,12 @@ A human-readable table is also available. The surface is **strictly read-only** 
 index, and the field contract it consumes is in
 [`docs/run-record-contract.md`](docs/run-record-contract.md).
 
+**Consumer caveat.** The `tokens` and `cost` aggregates are built from **best-effort,
+CLI-self-reported** signals — they are **not billing-grade** and must not be treated as authoritative
+cost (see [Cost, latency, and quality signals](#cost-latency-and-quality-signals)). For latency and
+output size, trust the **driver-measured** `sec` and `bytes` aggregates (recorded for *every* run),
+not an agent's self-reported numbers. A trend summarises what the CLIs reported, not an audited ledger.
+
 ## Safety
 
 For the full trust-boundary analysis and the per-CLI enforcement matrix, see
