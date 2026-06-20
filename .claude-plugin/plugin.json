@@ -6,6 +6,8 @@
     "name": "Eser KUBALI",
     "email": "eserlxl@gmail.com"
   },
+  "homepage": "https://github.com/eserlxl/external-agents#readme",
+  "repository": "https://github.com/eserlxl/external-agents",
   "license": "GPL-3.0-or-later",
   "keywords": [
     "agents",
