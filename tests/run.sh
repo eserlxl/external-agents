@@ -761,6 +761,18 @@ assert_contains "--check prints the preflight header"        "$chk_out" "externa
 assert_contains "--check probes cursor as the cursor-agent binary" "$chk_out" "need cursor-agent on PATH"
 assert_exit     "--check exits non-zero when agent CLIs are missing" 1 "$chk_rc"
 
+echo "== --check pass semantics (scoped agent present -> 0 missing, exit 0) =="
+# The documented pass criterion (0 missing / exit 0) must be test-backed, not only the missing case
+# above. Scope --check to one agent and put its stub binary on PATH (command -v only — the stub is
+# never executed); with the JSON reader present too, --check must report 0 missing and exit 0.
+prdir="$(mktemp -d)"
+printf '#!/usr/bin/env bash\ntrue\n' >"$prdir/codex"; chmod +x "$prdir/codex"
+pres_out="$(PATH="$prdir:$PATH" bash "$RUN" --agent codex --check 2>&1)"; pres_rc=$?
+rm -rf "$prdir"
+assert_contains "--check reports the scoped agent present (ok line)"          "$pres_out" "ok   codex"
+assert_contains "--check reports 0 missing when the scoped agent is present"  "$pres_out" "0 missing"
+assert_exit     "--check exits 0 when the scoped agent and reader are present" 0 "$pres_rc"
+
 echo "== --discover machine-readable reachable-agent set (restricted PATH) =="
 # The live-smoke harness scopes itself to installed agents via run-agent.sh --discover.
 # Under a restricted PATH with NO agent CLIs, every candidate must report 'missing' in
