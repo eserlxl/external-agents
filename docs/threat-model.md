@@ -84,7 +84,9 @@ best-effort cost/usage signals — built from values the driver resolved at laun
 parsed from the transcript. They therefore carry no prompt, no agent free-text, and no secret. The
 field-by-field contract and stability policy are in
 [run-record-contract.md](run-record-contract.md); the offline suite asserts the records stay
-secret-free.
+secret-free. The end-to-end operational lifecycle of this history — where it lives (under
+`EXTERNAL_AGENTS_OUT`, outside the repo) and how it is retained, rotated, backed up, and restored — is
+documented in [RUNBOOK.md](../RUNBOOK.md).
 
 ## Error classification and retry safety
 

@@ -61,3 +61,25 @@ cat "$base"/archive/index-*.jsonl > "$base/index.jsonl"
 `cp` / `cat` preserve each row verbatim, so the restored index is **content-identical** to the
 originals — the offline recoverability drill in `tests/run.sh` proves exactly this. All backup and
 restore writes stay under `EXTERNAL_AGENTS_OUT`, never inside the repo.
+
+## Lifecycle, end to end
+
+The run history has one cradle-to-grave flow, all under `EXTERNAL_AGENTS_OUT` (never the repo):
+
+1. **Accrue.** Every run appends one control-plane row to `index.jsonl` and writes per-run records —
+   no transcript text, prompt, or secret (the content-free guarantee; see
+   [docs/run-record-contract.md](docs/run-record-contract.md) and
+   [docs/threat-model.md](docs/threat-model.md)).
+2. **Retain.** The index grows unbounded; the `EXTERNAL_AGENTS_INDEX_MAX_BYTES` / `_MAX_ROWS`
+   thresholds decide when it has grown too large.
+3. **Rotate.** `scripts/run-history-maintain.sh` atomically rolls the index to
+   `archive/index-<UTC>.jsonl` and starts a fresh one — **no rows lost**. Old archives are pruned only
+   on the explicit `EXTERNAL_AGENTS_ARCHIVE_KEEP` opt-in.
+4. **Back up.** Archives double as backups; an explicit `cp` snapshots the live index on demand.
+5. **Restore.** A `cp` (single archive) or `cat archive/index-*.jsonl` (full history) rebuilds the
+   index with **content-identical** rows.
+
+Every artifact in this flow — the index, the per-run records, and the archives — lives under
+`EXTERNAL_AGENTS_OUT` (default `$HOME/.external-agents/logs`), **outside the repository**, and carries
+**only control-plane facts**, never a transcript, prompt, or secret. The offline suite asserts the
+rotation / recoverability invariants and the secret-free guarantee.

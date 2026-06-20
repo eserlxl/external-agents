@@ -517,9 +517,9 @@ projects, so you get a chronological run history without walking the per-project
 **Where it lives.** `<base>/index.jsonl`, where `<base>` is the transcript root
 (`EXTERNAL_AGENTS_OUT`, default `~/.external-agents/logs`); with an explicit `--out DIR` the index is
 written inside that directory. It is **append-only** — never rewritten — so each row is a permanent
-record of one agent run and concurrent runs simply append. It grows unbounded with use; the opt-in
-retention/rotation policy that bounds it **without losing rows** (and the backup/restore drill) is in
-[RUNBOOK.md](RUNBOOK.md).
+record of one agent run and concurrent runs simply append. It grows unbounded with use; the
+end-to-end run-history lifecycle — retention, rotation (no rows lost), backup, and restore, all under
+`EXTERNAL_AGENTS_OUT` and never the repo — is documented in [RUNBOOK.md](RUNBOOK.md).
 
 **Row fields.** Each line is one JSON object: a run id and timestamp that group a fan-out, the
 project namespace, and the same post-fallback resolved fields the
