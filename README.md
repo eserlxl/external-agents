@@ -256,9 +256,27 @@ files. So `fallback=1` means the agy quota fallback *actually swapped* the prima
 quota was checked), and the record never depends on parsing an agent's free-text output. The record
 is the single source the cross-agent summary and the opt-in JSON output (below) both render from.
 
-A `--agent all` fan-out also prints a compact **summary block** (`===== fan-out summary =====`) —
-one row per agent (`rc`, `model`, `tier`, `sec`, `bytes`, `fallback`) — as a digest beside the
-verbatim transcripts. Single-agent runs print no summary.
+### Cross-agent summary
+
+A `--agent all` fan-out prints a compact **summary block** after the transcripts — one row per agent
+from the records above:
+
+```
+===== fan-out summary =====
+  agent   rc  model                      tier      sec    bytes fallback
+  agy     0   Gemini 3.5 Flash (High)    high        0        5 1
+  codex   0   gpt-5.5                    high        1        5 0
+  cursor  0   gpt-5.5-high               high        0        5 0
+```
+
+How to read it: the summary is a **digest, not a replacement** — the full, verbatim (redacted)
+transcripts are still printed above it, and the `ok/failed` tally still goes to stderr. Use the
+summary to compare agents at a glance — who succeeded (`rc=0`), which model each resolved to (note
+agy's `fallback`), and how they differ in time (`sec`) and output size (`bytes`) — then scroll up to
+the matching `===== <agent> … =====` transcript for the actual content. On a **write** fan-out the
+summary adds a note that the post-write `git changes after write` block is **target-wide** (all
+agents share one tree), so a change can't be attributed to a single agent. Single-agent runs print no
+summary.
 
 ## Safety
 
