@@ -42,8 +42,9 @@ for a in "${agents[@]}"; do
   fx="$(e2e_make_fixture)" || { echo "e2e edit-readwrite: $a  FAIL: could not create fixture" >&2; rv=1; continue; }
   ev="$E2E_OUT/$a"; out="$(mktemp -d)"; proj="$out/$(basename "$fx")"
   e2e_capture_pre "$fx" "$ev"
+  # Capture the driver's stdout (it PRODUCES the post-write verification block) and stderr.
   EXTERNAL_AGENTS_OUT="$out" "$RUN" --agent "$a" --write --yes --target "$fx" \
-    --timeout "$TIMEOUT" --prompt "$EDIT_PROMPT" >/dev/null 2>"$ev/driver.err"
+    --timeout "$TIMEOUT" --prompt "$EDIT_PROMPT" >"$ev/driver.out" 2>"$ev/driver.err"
   e2e_capture_post "$fx" "$proj" "$a" "$ev"
   rc="$(cat "$proj/$a.rc" 2>/dev/null || echo '?')"
   bytes=$(wc -c <"$proj/$a.md" 2>/dev/null | tr -d ' '); bytes="${bytes:-0}"
@@ -57,6 +58,15 @@ for a in "${agents[@]}"; do
     echo "e2e edit-readwrite: $a  changed-file: $(wc -l <"$ev/post.status" | tr -d ' ') path(s) changed"
   else
     echo "e2e edit-readwrite: $a  FAIL: write run produced no change in the fixture" >&2; rv=1
+  fi
+  # The driver PRODUCES a post-write verification block on a git target — assert it ran and named
+  # the actual changed path (the driver's printed block echoes git status --porcelain / diff --stat).
+  changed_path="$(awk 'NR==1{print $2}' "$ev/post.status" 2>/dev/null)"
+  if grep -q "git changes after write" "$ev/driver.out" 2>/dev/null \
+     && [ -n "$changed_path" ] && grep -qF -- "$changed_path" "$ev/driver.out" 2>/dev/null; then
+    echo "e2e edit-readwrite: $a  post-write verification: block present and names '$changed_path'"
+  else
+    echo "e2e edit-readwrite: $a  FAIL: post-write verification block missing or does not name the changed file" >&2; rv=1
   fi
   rm -rf "$fx" "$out"
 done
