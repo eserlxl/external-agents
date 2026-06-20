@@ -83,6 +83,13 @@ Scope the check to a single agent with `--agent <name>` if you don't use all fou
 bash scripts/run-agent.sh --agent codex --check && echo "codex ready"
 ```
 
+**What `--check` does and does not prove.** `--check` is a **presence** preflight: it confirms the
+config reader (`jq`/`python3`) is available, `agents.json` is readable, and each agent CLI is on
+`PATH`. It does **not** invoke any CLI, verify authentication, or exercise read-only enforcement — a
+CLI can be present yet unauthenticated or misconfigured, so a passing `--check` is necessary but not
+sufficient for a working run. Proving an agent actually round-trips (and that the enforced read-only
+guarantee holds) is the job of the opt-in [live smoke harness](#live-smoke-opt-in), never `--check`.
+
 ## Usage
 
 Natural language (skill):
