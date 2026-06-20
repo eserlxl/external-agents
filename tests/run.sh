@@ -314,6 +314,32 @@ else
   printf '  skip summary-block test (timeout unavailable)\n'
 fi
 
+echo "== fan-out agreement signal (stub fan-out, no live CLI) =="
+# The summary closes with a deterministic all-ok / mixed / all-fail agreement (from the success
+# tally) plus a read-only no-mutation line on a git target. Assert each shape with stub agents.
+if command -v timeout >/dev/null 2>&1; then
+  agtgt="$(mktemp -d)"
+  agok="$(mktemp -d)"; for b in agy codex cursor-agent; do printf '#!/usr/bin/env bash\necho resp\n' >"$agok/$b"; chmod +x "$agok/$b"; done
+  agod="$(mktemp -d)"
+  assert_contains "agreement: all-ok rendered" \
+    "$(PATH="$agok:$PATH" EXTERNAL_AGENTS_OUT="$agod" bash "$RUN" --agent all --read-only --target "$agtgt" --prompt x 2>/dev/null)" "agreement: all-ok"
+  agf="$(mktemp -d)"; for b in agy codex cursor-agent; do printf '#!/usr/bin/env bash\nexit 1\n' >"$agf/$b"; chmod +x "$agf/$b"; done
+  afod="$(mktemp -d)"
+  assert_contains "agreement: all-fail rendered" \
+    "$(PATH="$agf:$PATH" EXTERNAL_AGENTS_OUT="$afod" bash "$RUN" --agent all --read-only --target "$agtgt" --prompt x 2>/dev/null)" "agreement: all-fail"
+  agm="$(mktemp -d)"; printf '#!/usr/bin/env bash\necho resp\n' >"$agm/codex"; printf '#!/usr/bin/env bash\nexit 1\n' >"$agm/agy"; printf '#!/usr/bin/env bash\nexit 1\n' >"$agm/cursor-agent"; chmod +x "$agm"/*
+  amod="$(mktemp -d)"
+  assert_contains "agreement: mixed rendered" \
+    "$(PATH="$agm:$PATH" EXTERNAL_AGENTS_OUT="$amod" bash "$RUN" --agent all --read-only --target "$agtgt" --prompt x 2>/dev/null)" "agreement: mixed"
+  nmgt="$(mktemp -d)"; ( cd "$nmgt" && git init -q && echo s >s.txt && git add . && git -c user.email=t@t -c user.name=t commit -qm s )
+  nmod="$(mktemp -d)"
+  assert_contains "agreement: read-only no-mutation (all unchanged)" \
+    "$(PATH="$agok:$PATH" EXTERNAL_AGENTS_OUT="$nmod" bash "$RUN" --agent all --read-only --target "$nmgt" --prompt x 2>/dev/null)" "all agents left the tree unchanged"
+  rm -rf "$agtgt" "$agok" "$agod" "$agf" "$afod" "$agm" "$amod" "$nmgt" "$nmod"
+else
+  printf '  skip agreement-signal test (timeout unavailable)\n'
+fi
+
 echo "== transcript secret-redaction (stub agent, real redact path) =="
 # run_stub_transcript TEXT FILEVAR -> stdout = the driver's echoed (redacted) transcript;
 # the persisted (redacted) transcript file content is written to the path FILEVAR (a disk
