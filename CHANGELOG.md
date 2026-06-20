@@ -4,6 +4,11 @@ All notable changes to external-agents are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/),
 and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [0.8.0] - 2026-06-20
+
+### Changed
+- Phase 8 resilience: published run-record JSON Schema, error-class taxonomy + driver classifier, bounded opt-in retry/backoff, read-only run-history analytics, and index rotation + backup/restore (all additive, backward-compatible)
+
 ## [0.7.0] - 2026-06-20
 
 A feature release focused on **machine-readable run output, durable run history, and safety** —
