@@ -254,9 +254,10 @@ main() {
 $discovered
 EOF
 
-  # Apply the optional --agent scope to the reachable set.
+  # Apply the optional --agent scope to the reachable set. --agent all (or no --agent) means
+  # every reachable agent; --agent <name> scopes to that one (skipped if not reachable).
   local verify=()
-  if [ -n "$WANT_AGENT" ]; then
+  if [ -n "$WANT_AGENT" ] && [ "$WANT_AGENT" != "all" ]; then
     for a in ${reachable[@]+"${reachable[@]}"}; do
       [ "$a" = "$WANT_AGENT" ] && verify=("$a")
     done
@@ -272,9 +273,10 @@ EOF
   echo "live smoke: verifying ${verify[*]}"
 
   # Per-agent live checks: (1) the argv-coverage matrix across every (mode, prompt-source)
-  # build_argv path, then (2) the composed end-to-end smoke — for enforced agents one
-  # read-only run yields argv-match + non-mutation + transcript together (smoke_agent). agy
-  # is read with the best-effort report (generalised into smoke_agent by the next sub-phase).
+  # build_argv path, then (2) the composed end-to-end smoke — ONE read-only run per reachable
+  # agent yields argv-match + non-mutation + transcript together (smoke_agent). Enforced
+  # agents assert non-mutation (hard fail on a change); agy reports it best-effort. The
+  # transcript and argv-match gates apply to every agent.
   local fails=0 mode src
   for a in "${verify[@]}"; do
     for mode in ${argv_modes[@]+"${argv_modes[@]}"}; do
@@ -282,11 +284,7 @@ EOF
         argv_equiv "$a" "$mode" "$src" || fails=$((fails + 1))
       done
     done
-    if enforced_readonly "$a"; then
-      smoke_agent "$a" || fails=$((fails + 1))
-    elif [ "$a" = "agy" ]; then
-      agy_mutation_report   # best-effort: reports a change, never fails the run
-    fi
+    smoke_agent "$a" || fails=$((fails + 1))
   done
   if [ "$fails" -gt 0 ]; then
     echo "live smoke: $fails live check(s) failed for ${verify[*]}" >&2
