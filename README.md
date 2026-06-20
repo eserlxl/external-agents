@@ -386,6 +386,26 @@ Like the per-run record, every row is **control-plane only** — built from valu
 launch/collect, never the transcript — so the index never accrues agent free-text, prompt text, or
 secrets.
 
+**Inspecting it.** The index is plain JSON Lines — **no special subcommand** — so you read it with
+standard tools (`tail`, `jq`, `grep`, `python3`). The base resolves to
+`${EXTERNAL_AGENTS_OUT:-$HOME/.external-agents/logs}/index.jsonl`:
+
+```bash
+IDX="${EXTERNAL_AGENTS_OUT:-$HOME/.external-agents/logs}/index.jsonl"
+
+# the 10 most recent agent runs, as a table
+tail -n 10 "$IDX" | jq -r '[.timestamp, .project, .agent, .rc, .model, "\(.sec)s"] | @tsv'
+
+# only the runs that failed (rc != 0)
+jq -c 'select(.rc != 0)' "$IDX"
+
+# every run where the agy quota fallback fired
+jq -c 'select(.fallback)' "$IDX"
+```
+
+Without `jq`, the same rows read fine in `python3` (`for l in open(IDX): json.loads(l)`) or as raw
+lines with `tail`/`grep`.
+
 ## Safety
 
 For the full trust-boundary analysis and the per-CLI enforcement matrix, see
