@@ -1042,6 +1042,40 @@ else
   skip "e2e edit-readwrite recipe oracle (timeout unavailable)"
 fi
 
+echo "== e2e run-e2e.sh dispatch (stub-driven, offline) =="
+# Drive run-e2e.sh's discover-then-dispatch path against a mode-aware stub agent: a read-only argv
+# means no writes (review-readonly stays clean); a write argv appends the marker to seed.txt/notes.txt
+# (edit-readwrite/edit-non-git pass). Prove it discovers the stub and dispatches all three recipes.
+if command -v timeout >/dev/null 2>&1; then
+  rstub="$(mktemp -d)"; re2ed="$(mktemp -d)"
+  cat >"$rstub/codex" <<'STUBEOF'
+#!/usr/bin/env bash
+printf 'stub ran\n'
+case "$*" in
+  *"-s read-only"*|*"--allowedTools"*|*"--mode plan"*|*"--sandbox"*) : ;;  # any agent's read-only argv -> no write
+  *)
+    [ -f seed.txt ]  && printf '%s\n' "$STUB_MARKER" >> seed.txt
+    [ -f notes.txt ] && printf '%s\n' "$STUB_MARKER" >> notes.txt
+    ;;
+esac
+exit 0
+STUBEOF
+  # Shadow ALL four real agent CLIs (this host has them on PATH) with the same mode-aware stub, so
+  # run-e2e.sh's own discovery reaches only stubs — never a real CLI — while the full toolchain stays.
+  for b in agy claude cursor-agent; do cp "$rstub/codex" "$rstub/$b"; done
+  chmod +x "$rstub/codex" "$rstub/agy" "$rstub/claude" "$rstub/cursor-agent"
+  re2e_out="$(PATH="$rstub:$PATH" EXTERNAL_AGENTS_LIVE=1 EXTERNAL_AGENTS_OUT="$re2ed" \
+    STUB_MARKER="$E2E_FIXTURE_MARKER" bash "$ROOT/tests/e2e/run-e2e.sh" 2>&1)"; re2e_rc=$?
+  assert_exit     "run-e2e.sh: stub-driven full dispatch -> exit 0"   0 "$re2e_rc"
+  assert_contains "run-e2e.sh: discovers reachable agents + dispatches" "$re2e_out" "reachable agents:"
+  for r in review-readonly edit-readwrite edit-non-git; do
+    assert_contains "run-e2e.sh: dispatched recipe '$r'" "$re2e_out" "running recipe '$r'"
+  done
+  rm -rf "$rstub" "$re2ed"
+else
+  skip "e2e run-e2e.sh dispatch (timeout unavailable)"
+fi
+
 echo "== e2e recipe dispatch drift guard (run-e2e.sh list == recipe files) =="
 # run-e2e.sh hardcodes the recipes it dispatches (`for recipe in ...`); a recipe file added without
 # updating that list — or removed while still listed — would be silently never run. Assert the
