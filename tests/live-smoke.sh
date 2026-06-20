@@ -265,6 +265,30 @@ quota_probe() {
   esac
   echo "live smoke: agy quota probe  status=$status resolved-model='$model' (no wakeup)"
 
+  # Decision consistency: the status must be one of available/exhausted/unknown, and the driver
+  # must pick the primary IFF available, else the Gemini fallback. Extract the primary + fallback
+  # labels from a forced-unavailable run's NOTE (no hardcoded model names).
+  case "$status" in available|exhausted|unknown) ;; *)
+    echo "live smoke: agy quota probe  FAIL: agy_model_status returned an invalid status '$status'" >&2; rv=1;;
+  esac
+  local fnote primary fallback
+  fnote="$(EXTERNAL_AGENTS_AGY_QUOTA_CMD=false "$RUN" --agent agy --effort high --dry-run --prompt x 2>&1 >/dev/null)"
+  primary="$(printf '%s' "$fnote" | sed -nE "s/.*agy quota for '([^']*)' is unknown.*/\1/p" | head -1)"
+  fallback="$(printf '%s' "$fnote" | sed -nE "s/.*using fallback '([^']*)'.*/\1/p" | head -1)"
+  if [ "$status" = "available" ]; then
+    if [ -n "$primary" ] && [ "$model" = "$primary" ]; then
+      echo "live smoke: agy quota probe  decision OK: available -> primary '$primary'"
+    else
+      echo "live smoke: agy quota probe  FAIL: available but resolved '$model' is not the primary '$primary'" >&2; rv=1
+    fi
+  else
+    if [ -n "$fallback" ] && [ "$model" = "$fallback" ]; then
+      echo "live smoke: agy quota probe  decision OK: $status -> fallback '$fallback'"
+    else
+      echo "live smoke: agy quota probe  FAIL: $status but resolved '$model' is not the fallback '$fallback'" >&2; rv=1
+    fi
+  fi
+
   # Schema shape — sanitised evidence (keys/types and array item-key NAMES only; NEVER any
   # percentage value or account identifier) recorded under the transcript dir as a drift
   # detector for the keys agy_model_status reads. An empty CLI output (IDE closed) is recorded
