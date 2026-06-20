@@ -388,6 +388,7 @@ echo "== signal extraction over fixture transcripts (present / absent, no live C
 # expansion of the literal '$' in the cost line).
 if command -v timeout >/dev/null 2>&1 && command -v python3 >/dev/null 2>&1; then
   sigdir="$(mktemp -d)"
+  # shellcheck disable=SC2016  # the literal '$0.0421' is fixture cost text; it must NOT expand.
   printf '%s\n' 'reviewed the change. total tokens: 1543 and total cost: $0.0421 — done' >"$sigdir/present.txt"
   printf '%s\n' 'I reviewed the code and found no issues. Looks good, ship it.'           >"$sigdir/absent.txt"
   cat >"$sigdir/codex" <<'STUBEOF'
@@ -406,6 +407,7 @@ STUBEOF
   }
   pres="$(sig_signals "$sigdir/present.txt")"
   assert_contains "signals: present fixture extracts a numeric token count" "$pres" '"tokens":1543'
+  # shellcheck disable=SC2016  # the needle '"cost":"$0.0421"' is a literal JSON string; it must NOT expand.
   assert_contains "signals: present fixture extracts the cost verbatim"     "$pres" '"cost":"$0.0421"'
   absn="$(sig_signals "$sigdir/absent.txt")"
   assert_contains "signals: absent fixture -> tokens unavailable" "$absn" '"tokens":"unavailable"'
@@ -744,8 +746,8 @@ rm -rf "$ft"
 echo "== dual-manifest decision lock (bumper references no .codex-plugin) =="
 # Phase 7.1 removed the dead .codex-plugin/plugin.json reference — the repo ships only
 # .claude-plugin/plugin.json. Lock that decision with a grep regression guard (mirroring the
-# shellcheck-regression guard below): the bumper must not reference a non-existent .codex-plugin
-# manifest again, which neither shellcheck nor the lockstep tests would otherwise catch.
+# regression guard in the shellcheck block below): the bumper must not reference a non-existent
+# .codex-plugin manifest again, which neither shellcheck nor the lockstep tests would otherwise catch.
 if grep -q 'codex-plugin' "$ROOT/scripts/bump-version.sh"; then
   bad "bumper references no non-existent .codex-plugin manifest" "found a .codex-plugin reference in scripts/bump-version.sh"
 else
@@ -945,10 +947,14 @@ fi
 
 echo "== shellcheck (regression guard) =="
 if command -v shellcheck >/dev/null 2>&1; then
-  if shellcheck "$ROOT/scripts/run-agent.sh" "$ROOT/scripts/bump-version.sh" >/dev/null 2>&1; then
-    ok "scripts/*.sh are shellcheck-clean"
+  # Lint the driver scripts AND the test harness itself — the harness is the largest body of
+  # shell in the repo, so a shellcheck regression there must not go uncaught.
+  if shellcheck "$ROOT/scripts/run-agent.sh" "$ROOT/scripts/bump-version.sh" \
+                "$ROOT/tests/run.sh" "$ROOT/tests/live-smoke.sh" \
+                "$ROOT"/tests/e2e/*.sh "$ROOT"/tests/e2e/lib/*.sh >/dev/null 2>&1; then
+    ok "scripts/*.sh and tests/*.sh are shellcheck-clean"
   else
-    bad "scripts/*.sh are shellcheck-clean" "run: shellcheck scripts/run-agent.sh scripts/bump-version.sh"
+    bad "scripts/*.sh and tests/*.sh are shellcheck-clean" "run: shellcheck scripts/*.sh tests/run.sh tests/live-smoke.sh tests/e2e/*.sh tests/e2e/lib/*.sh"
   fi
 else
   skip "shellcheck (not installed)"
