@@ -801,6 +801,34 @@ printf '0\n' >"$vproj/codex.rc"; : >"$vproj/codex.md"
 transcript_ok "$vproj" codex >/dev/null 2>&1; assert_exit "transcript_ok: empty transcript -> fail (1)" 1 "$?"
 rm -rf "$vproj"
 
+echo "== live-smoke status-record shape (stub AGENT_STATUS, no real CLI) =="
+# Pin the deterministic shape of $LIVE_OUT/status.txt (and its content-free provenance sibling) that
+# write_status_record emits: one '<agent>  <status>' line per KNOWN_AGENTS entry, fixed order, only
+# vocabulary tokens, a stable two-field format, and NO transcript/secret text. Drive the sourced
+# helper with a synthetic AGENT_STATUS map and a temp LIVE_OUT (never the real $HOME) — launches no CLI.
+srdir="$(mktemp -d)"
+(
+  # shellcheck disable=SC2034  # LIVE_OUT is read by write_status_record via dynamic scope
+  LIVE_OUT="$srdir/live-smoke"
+  # shellcheck disable=SC2034  # AGENT_STATUS is read by write_status_record via dynamic scope
+  declare -A AGENT_STATUS=( [agy]=live-verified [codex]=failed [claude]=skipped-not-reachable [cursor]=skipped-scoped-out )
+  write_status_record >/dev/null 2>&1
+)
+srf="$srdir/live-smoke/status.txt"
+sr_lines="$(wc -l <"$srf" 2>/dev/null | tr -d ' ')"
+assert_exit "status-record: one line per known agent (4)" 4 "${sr_lines:-0}"
+sr_order="$(awk '{printf "%s ", $1}' "$srf" 2>/dev/null | sed 's/ $//')"
+assert_contains "status-record: agents in KNOWN_AGENTS order" "$sr_order" "agy codex claude cursor"
+sr_bad="$(awk '{print $2}' "$srf" 2>/dev/null | grep -vxE 'live-verified|failed|reachable|skipped-not-reachable|skipped-scoped-out|skipped-not-opted-in|unknown' | head -1)"
+if [ -z "$sr_bad" ]; then ok "status-record: only documented vocabulary tokens"; else bad "status-record: only documented vocabulary tokens" "non-vocabulary token: $sr_bad"; fi
+if awk 'NF!=2{exit 1}' "$srf" 2>/dev/null; then ok "status-record: two-field deterministic format"; else bad "status-record: two-field deterministic format" "a line was not '<agent> <status>'"; fi
+if grep -qiE 'token|api[_-]?key|secret|bearer|password|stub response|stub transcript|[0-9]+%|remainingPercentage' "$srdir"/live-smoke/*.txt 2>/dev/null; then
+  bad "status-record: control-plane only (no transcript/secret text)" "secret/transcript-shaped text leaked into the record set"
+else
+  ok "status-record: control-plane only (no transcript/secret text)"
+fi
+rm -rf "$srdir"
+
 echo "== bump-version.sh lockstep write (mktemp fixture, real repo untouched) =="
 ft="$(mktemp -d)"
 mkdir -p "$ft/scripts" "$ft/.claude-plugin" "$ft/skills/external-agents"
