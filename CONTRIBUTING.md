@@ -76,7 +76,9 @@ The full trust-boundary analysis is in [docs/threat-model.md](docs/threat-model.
   backends; when you add or change a config query type, update **both** backends in `run-agent.sh`
   and the parity block in `tests/run.sh` together.
 - The live/E2E harnesses (`tests/live-smoke.sh`, `tests/e2e/`) are **opt-in**
-  (`EXTERNAL_AGENTS_LIVE=1`) and **never** part of the required offline gate.
+  (`EXTERNAL_AGENTS_LIVE=1`) and **never** part of the required offline gate — so a green required
+  (offline) CI run does **not** imply a green *live* run; live readiness is proven only by an armed run
+  (see the README [Live smoke](README.md#live-smoke-opt-in) section).
 
 ## Versioning, changelog, and SPDX
 
