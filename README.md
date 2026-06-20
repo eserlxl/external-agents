@@ -325,6 +325,14 @@ EXTERNAL_AGENTS_LIVE=1 bash tests/live-smoke.sh --agent codex   # one agent
 EXTERNAL_AGENTS_LIVE=1 bash tests/live-smoke.sh                 # every reachable agent
 ```
 
+**Non-mutation.** Each read-only run targets a disposable, git-backed sandbox (never the real
+repo), and the harness snapshots it before/after. For the **enforced** agents
+(`codex`/`claude`/`cursor`) any change to the tree is a **hard failure** — independent proof the
+read-only guarantee held. For **agy**, whose read-only mode is **best-effort** (`--sandbox` is not a
+hard write barrier), the harness only **reports** whether the tree changed, explicitly labelled
+best-effort, and **never fails** on a change — agy is never over-claimed as enforced, matching the
+[per-CLI enforcement matrix](docs/threat-model.md#per-cli-read-only-enforcement-matrix).
+
 ## Files
 
 ```

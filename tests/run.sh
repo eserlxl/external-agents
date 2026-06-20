@@ -459,6 +459,28 @@ else
   printf '  skip enforced non-mutation test (timeout unavailable)\n'
 fi
 
+echo "== live-smoke agy read-only best-effort report (mutation never fails) =="
+# agy read-only is best-effort (--sandbox), so agy_mutation_report only REPORTS whether the
+# tree changed and never fails the harness — a clean run and a mutating run both return 0,
+# both labelled best-effort, so agy is never over-claimed as enforced.
+if command -v timeout >/dev/null 2>&1; then
+  agstub="$(mktemp -d)"
+  printf '#!/usr/bin/env bash\ntrue\n' >"$agstub/agy"; chmod +x "$agstub/agy"
+  ag_clean="$(PATH="$agstub:$PATH" agy_mutation_report 2>&1)"; ag_clean_rc=$?
+  assert_exit     "agy best-effort: a clean run does not fail"        0 "$ag_clean_rc"
+  assert_contains "agy best-effort: clean run is labelled best-effort" "$ag_clean" "best-effort"
+  assert_contains "agy best-effort: clean run reports unchanged"       "$ag_clean" "unchanged"
+  printf '#!/usr/bin/env bash\necho oops > MUT.txt\n' >"$agstub/agy"; chmod +x "$agstub/agy"
+  ag_mut="$(PATH="$agstub:$PATH" agy_mutation_report 2>&1)"; ag_mut_rc=$?
+  assert_exit     "agy best-effort: a mutation does NOT fail the harness" 0 "$ag_mut_rc"
+  assert_contains "agy best-effort: mutation labelled best-effort"        "$ag_mut" "best-effort"
+  assert_contains "agy best-effort: mutation reported as a change"        "$ag_mut" "CHANGED"
+  case "$ag_mut" in *[Ee]nforced*not*|*not*enforced*) ok "agy best-effort: never claimed as enforced";; *[Ee]nforced*) bad "agy best-effort: never claimed as enforced" "claimed enforced";; *) ok "agy best-effort: never claimed as enforced";; esac
+  rm -rf "$agstub"
+else
+  printf '  skip agy best-effort report test (timeout unavailable)\n'
+fi
+
 echo "== bump-version.sh lockstep write (mktemp fixture, real repo untouched) =="
 ft="$(mktemp -d)"
 mkdir -p "$ft/scripts" "$ft/.claude-plugin" "$ft/skills/external-agents"

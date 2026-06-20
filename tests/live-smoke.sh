@@ -95,6 +95,27 @@ non_mutation_check() {  # agent
   return 1
 }
 
+# agy_mutation_report — run agy read-only against a fresh sandbox and REPORT whether the tree
+# changed, explicitly labelled best-effort. agy read-only relies on --sandbox, which is NOT a
+# hard write barrier (see scripts/run-agent.sh), so a change is recorded as an OBSERVED, not
+# enforced, outcome and NEVER fails the harness. Always returns 0.
+agy_mutation_report() {
+  local sb out changes
+  sb="$(make_sandbox)" || { echo "live smoke: agy [read-only]  best-effort: could not create sandbox (skipped)"; return 0; }
+  out="$(mktemp -d)"
+  EXTERNAL_AGENTS_OUT="$out" "$RUN" --agent agy --read-only --target "$sb" \
+    --timeout "$SMOKE_TIMEOUT" --prompt "$SMOKE_PROMPT" >/dev/null 2>&1
+  changes="$(tree_changes "$sb")"
+  rm -rf "$sb" "$out"
+  if [ -z "$changes" ]; then
+    echo "live smoke: agy [read-only]  best-effort: tree unchanged (observed, not enforced)"
+  else
+    echo "live smoke: agy [read-only]  best-effort: tree CHANGED (agy --sandbox is best-effort, not enforced):"
+    printf '%s\n' "$changes"
+  fi
+  return 0
+}
+
 # argv_equiv AGENT MODE SRC — prove the LIVE launch argv matches what --dry-run shows for
 # ONE (mode, prompt-source) pair, so every build_argv resolution path is covered:
 #   MODE = read-only | read-write   (--read-only enforced argv vs --write argv)
@@ -207,6 +228,8 @@ EOF
     done
     if enforced_readonly "$a"; then
       non_mutation_check "$a" || fails=$((fails + 1))
+    elif [ "$a" = "agy" ]; then
+      agy_mutation_report   # best-effort: reports a change, never fails the run
     fi
   done
   if [ "$fails" -gt 0 ]; then
