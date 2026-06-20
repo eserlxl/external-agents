@@ -251,8 +251,10 @@ For the full trust-boundary analysis and the per-CLI enforcement matrix, see
   best-effort; claude write needs `bypassPermissions` for shell; cursor needs prior auth
   (`cursor-agent login`) and its read-only mode (`--mode plan`) is enforced. The canonical
   per-CLI enforcement matrix lives in
-  [docs/threat-model.md](docs/threat-model.md#per-cli-read-only-enforcement-matrix) and is
-  asserted against the driver by the offline test suite.
+  [docs/threat-model.md](docs/threat-model.md#per-cli-read-only-enforcement-matrix); it is
+  asserted against the driver's resolved argv by the offline test suite and **observed
+  end-to-end** by the opt-in live harness (enforced agents leave a sandbox byte-identical;
+  agy is reported best-effort — see [Live smoke](#live-smoke-opt-in)).
 - **Verification is produced, not just advised.** After a write run on a git target the
   script prints `git status` / `git diff --stat`; if the target isn't a git repo it warns
   that there is no baseline to diff or revert. Still review the diff before trusting the

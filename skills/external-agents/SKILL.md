@@ -71,8 +71,11 @@ Three CLI-specific caveats to pass on to the user:
   codex/claude; it runs Cursor's own models (Composer 2.5).
 
 The canonical per-CLI read-only enforcement matrix (agy best-effort vs codex/claude/cursor
-enforced) lives in `docs/threat-model.md` and is asserted against the driver's resolved argv by
-the offline test suite — keep these caveats in sync with it.
+enforced) lives in `docs/threat-model.md`. It is asserted against the driver's resolved argv by
+the offline test suite, and **observed end-to-end** by the opt-in live harness
+(`tests/live-smoke.sh`): an enforced read-only run must leave the sandbox byte-identical (a change
+is a hard failure), while agy mutation is reported best-effort, never asserted. Keep these caveats
+in sync with it.
 
 ## 3. Resolve the target  (default: current directory)
 
