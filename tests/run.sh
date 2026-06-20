@@ -377,6 +377,41 @@ else
   printf '  skip run-index test (timeout/python3 unavailable)\n'
 fi
 
+echo "== signal extraction over fixture transcripts (present / absent, no live CLI) =="
+# Feed captured fixture transcripts (one with token+cost lines, one with neither) through the REAL
+# run_one -> extract_signal path via a stub that cats the fixture, and assert the per-run record's
+# signals: present -> the parsed values (tokens a number, cost verbatim); absent -> "unavailable".
+# The fixtures are committed here and written to disk so the cat-stub reads them VERBATIM (no shell
+# expansion of the literal '$' in the cost line).
+if command -v timeout >/dev/null 2>&1 && command -v python3 >/dev/null 2>&1; then
+  sigdir="$(mktemp -d)"
+  printf '%s\n' 'reviewed the change. total tokens: 1543 and total cost: $0.0421 — done' >"$sigdir/present.txt"
+  printf '%s\n' 'I reviewed the code and found no issues. Looks good, ship it.'           >"$sigdir/absent.txt"
+  cat >"$sigdir/codex" <<'STUBEOF'
+#!/usr/bin/env bash
+cat "$SIG_FIXTURE"
+STUBEOF
+  chmod +x "$sigdir/codex"
+  sig_signals() {  # fixture-path -> the meta.json "signals" object as compact JSON
+    local fix="$1" tgt odir
+    tgt="$(mktemp -d)"; odir="$(mktemp -d)"
+    SIG_FIXTURE="$fix" PATH="$sigdir:$PATH" EXTERNAL_AGENTS_OUT="$odir" \
+      bash "$RUN" --agent codex --read-only --target "$tgt" --prompt x >/dev/null 2>&1
+    python3 -c 'import json,sys; print(json.dumps(json.load(open(sys.argv[1]))["signals"], separators=(",",":")))' \
+      "$odir/$(basename "$tgt")/codex.meta.json" 2>/dev/null
+    rm -rf "$tgt" "$odir"
+  }
+  pres="$(sig_signals "$sigdir/present.txt")"
+  assert_contains "signals: present fixture extracts a numeric token count" "$pres" '"tokens":1543'
+  assert_contains "signals: present fixture extracts the cost verbatim"     "$pres" '"cost":"$0.0421"'
+  absn="$(sig_signals "$sigdir/absent.txt")"
+  assert_contains "signals: absent fixture -> tokens unavailable" "$absn" '"tokens":"unavailable"'
+  assert_contains "signals: absent fixture -> cost unavailable"   "$absn" '"cost":"unavailable"'
+  rm -rf "$sigdir"
+else
+  printf '  skip signal-extraction fixture test (timeout/python3 unavailable)\n'
+fi
+
 echo "== cross-agent summary block (stub fan-out, no live CLI) =="
 # A --agent all fan-out prints a compact summary block (one row per agent + expected columns).
 # Assert its shape with stub agents, plus the write-mode target-wide note on a write fan-out.
