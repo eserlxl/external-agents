@@ -561,6 +561,58 @@ else
   skip "JSON-emitter parity (jq/python3/timeout unavailable)"
 fi
 
+echo "== run-record schema conformance (stub fan-out records validate vs run-record.schema.json; both backends) =="
+# Every emitted meta.json and index.jsonl row must conform to the published draft-07 schema. Run a
+# stub --agent all fan-out under jq AND under a python3-only PATH, then validate each emitted record
+# against schema/run-record.schema.json with python3 jsonschema. Offline; no live CLI.
+if command -v timeout >/dev/null 2>&1 && command -v python3 >/dev/null 2>&1 && python3 -c 'import jsonschema' >/dev/null 2>&1; then
+  scstub="$(mktemp -d)"
+  for b in agy codex cursor-agent; do printf '#!/usr/bin/env bash\necho "resp text"\n' >"$scstub/$b"; chmod +x "$scstub/$b"; done
+  screstr="$(mktemp -d)"; mk_restricted_bin "$screstr"   # python3, NO jq -> forces JSON_BACKEND=py
+  sc_run() {  # pathprefix  bashbin -> "OK <n>" if every meta.json + index row validates, else "FAIL ..."
+    local pp="$1" bb="$2" sctgt scod
+    sctgt="$(mktemp -d)"; scod="$(mktemp -d)"
+    EXTERNAL_AGENTS_AGY_QUOTA_CMD=false PATH="$scstub:$pp" EXTERNAL_AGENTS_OUT="$scod" \
+      "$bb" "$RUN" --agent all --effort high --read-only --target "$sctgt" --prompt x >/dev/null 2>&1
+    SC_SCHEMA="$ROOT/schema/run-record.schema.json" SC_OUT="$scod" SC_PROJ="$(basename "$sctgt")" python3 - <<'PY'
+import json, os, glob
+from jsonschema import Draft7Validator
+v = Draft7Validator(json.load(open(os.environ["SC_SCHEMA"])))
+proj = os.path.join(os.environ["SC_OUT"], os.environ["SC_PROJ"])
+n = 0; errs = []
+for f in sorted(glob.glob(os.path.join(proj, "*.meta.json"))):
+    try:
+        rec = json.load(open(f))
+    except Exception as ex:
+        errs.append("meta parse %s: %s" % (os.path.basename(f), ex)); continue
+    e = list(v.iter_errors(rec))
+    if e: errs.append("meta %s: %s" % (os.path.basename(f), e[0].message))
+    else: n += 1
+idx = os.path.join(os.environ["SC_OUT"], "index.jsonl")
+if os.path.exists(idx):
+    for ln in open(idx):
+        ln = ln.strip()
+        if not ln: continue
+        try:
+            row = json.loads(ln)
+        except Exception as ex:
+            errs.append("row parse: %s" % ex); continue
+        e = list(v.iter_errors(row))
+        if e: errs.append("row %s: %s" % (row.get("agent", "?"), e[0].message))
+        else: n += 1
+print("FAIL " + "; ".join(errs) if errs else "OK %d" % n)
+PY
+    rm -rf "$sctgt" "$scod"
+  }
+  sc_jq="$(sc_run "$PATH" "bash")"
+  sc_py="$(sc_run "$screstr/bin" "$screstr/bin/bash")"
+  rm -rf "$scstub" "$screstr"
+  case "$sc_jq" in "OK "[1-9]*) ok "schema conformance: jq-backend records validate ($sc_jq)";;     *) bad "schema conformance: jq-backend records validate" "$sc_jq";; esac
+  case "$sc_py" in "OK "[1-9]*) ok "schema conformance: python3-backend records validate ($sc_py)";; *) bad "schema conformance: python3-backend records validate" "$sc_py";; esac
+else
+  skip "run-record schema conformance (timeout/python3/jsonschema unavailable)"
+fi
+
 echo "== transcript secret-redaction (stub agent, real redact path) =="
 # run_stub_transcript TEXT FILEVAR -> stdout = the driver's echoed (redacted) transcript;
 # the persisted (redacted) transcript file content is written to the path FILEVAR (a disk
