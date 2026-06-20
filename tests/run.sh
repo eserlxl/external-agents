@@ -274,7 +274,10 @@ if command -v timeout >/dev/null 2>&1; then
   recstub="$(mktemp -d)"
   for b in agy codex cursor-agent; do printf '#!/usr/bin/env bash\necho "stub response"\n' >"$recstub/$b"; chmod +x "$recstub/$b"; done
   rectgt="$(mktemp -d)"; recodir="$(mktemp -d)"
-  PATH="$recstub:$PATH" EXTERNAL_AGENTS_OUT="$recodir" \
+  # EXTERNAL_AGENTS_AGY_QUOTA_CMD=false forces the quota check to fail (IDE closed / quota
+  # unconfirmable) so the agy high-tier fallback fires deterministically, regardless of whether a
+  # real antigravity-usage is installed on PATH (matches the parity/degradation blocks above).
+  PATH="$recstub:$PATH" EXTERNAL_AGENTS_OUT="$recodir" EXTERNAL_AGENTS_AGY_QUOTA_CMD=false \
     bash "$RUN" --agent all --effort high --read-only --target "$rectgt" --prompt x >/dev/null 2>&1
   recproj="$recodir/$(basename "$rectgt")"
   codex_rec="$(tr '\t' '|' <"$recproj/codex.record" 2>/dev/null)"
@@ -302,7 +305,9 @@ if command -v timeout >/dev/null 2>&1 && command -v python3 >/dev/null 2>&1; the
   mstub="$(mktemp -d)"
   for b in agy codex cursor-agent; do printf '#!/usr/bin/env bash\necho "stub transcript text"\n' >"$mstub/$b"; chmod +x "$mstub/$b"; done
   mtgt="$(mktemp -d)"; modir="$(mktemp -d)"
-  PATH="$mstub:$PATH" EXTERNAL_AGENTS_OUT="$modir" \
+  # Force the agy high-tier fallback deterministically (IDE closed / quota unconfirmable) so the
+  # fallback:true assertion holds on machines that do have a real antigravity-usage on PATH.
+  PATH="$mstub:$PATH" EXTERNAL_AGENTS_OUT="$modir" EXTERNAL_AGENTS_AGY_QUOTA_CMD=false \
     bash "$RUN" --agent all --effort high --read-only --target "$mtgt" --prompt x >/dev/null 2>&1
   mproj="$modir/$(basename "$mtgt")"
   # (1) one meta.json per enabled agent (3).
@@ -353,7 +358,9 @@ if command -v timeout >/dev/null 2>&1 && command -v python3 >/dev/null 2>&1; the
   for b in agy codex cursor-agent; do printf '#!/usr/bin/env bash\necho "stub transcript text"\n' >"$istub/$b"; chmod +x "$istub/$b"; done
   itgt="$(mktemp -d)"; ibase="$(mktemp -d)"
   # Run 1: a 3-agent fan-out -> 3 rows.  Run 2: a single agent -> +1 row (growth, distinct run_id).
-  PATH="$istub:$PATH" EXTERNAL_AGENTS_OUT="$ibase" \
+  # Force the agy high-tier fallback deterministically (IDE closed / quota unconfirmable) so the
+  # agy fallback:true row holds regardless of a real antigravity-usage being installed on PATH.
+  PATH="$istub:$PATH" EXTERNAL_AGENTS_OUT="$ibase" EXTERNAL_AGENTS_AGY_QUOTA_CMD=false \
     bash "$RUN" --agent all --effort high --read-only --target "$itgt" --prompt x >/dev/null 2>&1
   PATH="$istub:$PATH" EXTERNAL_AGENTS_OUT="$ibase" \
     bash "$RUN" --agent codex --effort high --read-only --target "$itgt" --prompt y >/dev/null 2>&1
