@@ -679,6 +679,52 @@ else
   skip "failure-injection oracles (timeout/python3 unavailable)"
 fi
 
+echo "== run-history analytics trends oracle (committed synthetic index; both backends; read-only) =="
+# Aggregate scripts/run-history-report.sh over a COMMITTED synthetic index fixture and assert exact
+# values under jq AND a python3-only PATH: run/ok/fail counts, error_class distribution, fallback
+# rate, sec/bytes summaries, and the tokens/cost aggregates with the "unavailable" rows EXCLUDED
+# (counted, never zeroed). Then assert the fixture is byte-identical after the analytic runs.
+if command -v python3 >/dev/null 2>&1; then
+  RH="$ROOT/scripts/run-history-report.sh"
+  TFIX="$ROOT/tests/fixtures/synthetic-index.jsonl"
+  rh_check() {  # metrics-json -> "OK" if every expected aggregate matches, else "FAIL <json>"
+    python3 -c '
+import json, sys
+d = json.loads(sys.argv[1])
+ok = (
+  d["runs"] == 6 and d["ok"] == 3 and d["failed"] == 3 and abs(d["success_rate"] - 0.5) < 1e-9
+  and d["error_class"] == {"ok": 3, "transient": 1, "auth": 1, "timeout": 1}
+  and d["fallback"]["count"] == 2 and abs(d["fallback"]["rate"] - 1.0 / 3) < 1e-6
+  and d["sec"]["min"] == 1 and d["sec"]["max"] == 10 and abs(d["sec"]["mean"] - 31.0 / 6) < 1e-5
+  and d["bytes"]["min"] == 50 and d["bytes"]["max"] == 500 and abs(d["bytes"]["mean"] - 1550.0 / 6) < 1e-5
+  and d["tokens"]["counted"] == 3 and d["tokens"]["unavailable"] == 3 and d["tokens"]["sum"] == 6000 and abs(d["tokens"]["mean"] - 2000) < 1e-9
+  and d["cost"]["counted"] == 3 and d["cost"]["unavailable"] == 3 and abs(d["cost"]["sum"] - 1.0) < 1e-6
+)
+print("OK" if ok else "FAIL " + json.dumps(d))
+' "$1"
+  }
+  if command -v jq >/dev/null 2>&1; then
+    assert_contains "trends[jq]: exact aggregates over synthetic index" "$(rh_check "$(bash "$RH" --json "$TFIX" 2>/dev/null)")" "OK"
+  else
+    skip "trends oracle (jq backend: jq unavailable)"
+  fi
+  trestr="$(mktemp -d)"; mk_restricted_bin "$trestr"   # python3, NO jq -> forces the python3 backend
+  assert_contains "trends[py]: exact aggregates over synthetic index" "$(rh_check "$(PATH="$trestr/bin" "$trestr/bin/bash" "$RH" --json "$TFIX" 2>/dev/null)")" "OK"
+  # Read-only: the committed fixture must be byte-identical after the analytic runs under both backends.
+  rh_before="$(cksum "$TFIX")"
+  bash "$RH" --json "$TFIX" >/dev/null 2>&1
+  PATH="$trestr/bin" "$trestr/bin/bash" "$RH" --json "$TFIX" >/dev/null 2>&1
+  rh_after="$(cksum "$TFIX")"
+  rm -rf "$trestr"
+  if [ "$rh_before" = "$rh_after" ]; then
+    ok "trends: synthetic index byte-identical after the analytic (read-only)"
+  else
+    bad "trends: synthetic index byte-identical after the analytic (read-only)" "checksum changed"
+  fi
+else
+  skip "run-history analytics trends oracle (python3 unavailable)"
+fi
+
 echo "== transcript secret-redaction (stub agent, real redact path) =="
 # run_stub_transcript TEXT FILEVAR -> stdout = the driver's echoed (redacted) transcript;
 # the persisted (redacted) transcript file content is written to the path FILEVAR (a disk
