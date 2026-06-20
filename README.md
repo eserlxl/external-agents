@@ -379,6 +379,10 @@ The read-write edit recipe confines all writes to the **throwaway fixture** (a n
 outside the plugin tree, passed with `--yes`) and asserts the driver's post-write verification block
 names the changed file — nothing in the real repo is ever touched.
 
+A green offline `tests/run.sh` proves the recipe **plumbing** (fixtures, masked-argv capture, the
+skip-when-unarmed path); only an armed run against an installed, authenticated CLI proves a given
+agent actually round-trips. See [docs/e2e-recipe.md](docs/e2e-recipe.md#local-vs-live-readiness).
+
 ## Files
 
 ```

@@ -136,6 +136,24 @@ throwaway directory, to exercise the driver's no-baseline path.
 EXTERNAL_AGENTS_LIVE=1 bash tests/e2e/edit-non-git.sh codex
 ```
 
+## Local vs live readiness
+
+The recipes have two distinct halves — know which is which before reading the evidence:
+
+- **Runs offline, no CLI (proven by `tests/run.sh`):** the deterministic fixture generator and reset
+  (`e2e_make_fixture` / `e2e_fixture_reset`), the evidence capture's masked-argv path (recorded from
+  `--dry-run`, no launch), and every recipe's **skip-when-unarmed** path (`EXTERNAL_AGENTS_LIVE`
+  unset → skip + exit 0). These are part of the offline CI gate and never touch a real CLI.
+
+- **Requires a real, authenticated CLI (opt-in, `EXTERNAL_AGENTS_LIVE=1`):** the actual round-trips —
+  a non-empty transcript at `rc=0`, enforced read-only **non-mutation**, the **post-write
+  verification** block on a git target, and the **no-baseline warning** on a non-git target. These
+  launch the agent, so they need the CLI installed and signed in, and are **never** in the offline CI
+  gate. An agent whose CLI is absent is skipped cleanly.
+
+So a green offline `tests/run.sh` proves the framework's plumbing; only an armed run against an
+authenticated CLI proves a given agent actually round-trips.
+
 ## Per-agent reproducibility checklist
 
 To reproduce the full Phase 3 evidence for one agent `<a>`:
