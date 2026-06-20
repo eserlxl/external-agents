@@ -417,7 +417,7 @@ echo "== live-smoke sandbox fixture (disposable, git-backed, outside the plugin 
 # Source the live harness — it guards main() behind a direct-execution check, so sourcing
 # only defines its helper functions — then assert make_sandbox returns a seeded git tree
 # that is NEVER inside the plugin tree (a read-only live run must target a throwaway).
-# shellcheck disable=SC1090  # sourced by absolute path to unit-test the harness helpers
+# shellcheck source=/dev/null  # dynamic absolute-path source, not followed by shellcheck
 . "$ROOT/tests/live-smoke.sh"
 sb="$(make_sandbox)"
 if [ -n "$sb" ] && [ -d "$sb" ]; then
@@ -631,6 +631,27 @@ assert_contains "non-UTF-8 abort is explained"             "$uft_err" "not valid
 uft_ver="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["version"])' "$uft/.claude-plugin/plugin.json" 2>/dev/null)"
 assert_contains "plugin.json version unchanged after abort" "$uft_ver" "1.0.0"
 rm -rf "$uft"
+
+echo "== E2E fixture generator (deterministic git fixture, offline self-check) =="
+# The E2E recipes drive real agents against a throwaway git fixture. Source the fixture lib
+# (sourceable: defines helpers only) and assert e2e_make_fixture deterministically produces a
+# git repo with the known seed file and exactly one initial commit, outside the plugin tree.
+# shellcheck source=/dev/null  # dynamic absolute-path source, not followed by shellcheck
+. "$ROOT/tests/e2e/lib/fixture.sh"
+fx="$(e2e_make_fixture)"
+if [ -n "$fx" ] && [ -d "$fx" ]; then
+  case "$fx/" in
+    "$ROOT/"*) bad "E2E fixture is outside the plugin tree" "got $fx under $ROOT";;
+    *)         ok "E2E fixture is outside the plugin tree";;
+  esac
+  if [ -d "$fx/.git" ]; then ok "E2E fixture is a git repo"; else bad "E2E fixture is a git repo" "no .git in $fx"; fi
+  if [ -f "$fx/$E2E_FIXTURE_SEED" ]; then ok "E2E fixture has the known seed file ($E2E_FIXTURE_SEED)"; else bad "E2E fixture has the known seed file" "missing $E2E_FIXTURE_SEED"; fi
+  if [ "$(e2e_fixture_commit_count "$fx")" = "1" ]; then ok "E2E fixture has exactly one initial commit"; else bad "E2E fixture has exactly one initial commit" "got $(e2e_fixture_commit_count "$fx") commits"; fi
+  if [ -z "$(git -C "$fx" status --porcelain 2>/dev/null)" ]; then ok "E2E fixture starts clean"; else bad "E2E fixture starts clean" "unexpected dirty state"; fi
+  rm -rf "$fx"
+else
+  bad "e2e_make_fixture produced a fixture" "no path returned"
+fi
 
 echo "== shellcheck (regression guard) =="
 if command -v shellcheck >/dev/null 2>&1; then
