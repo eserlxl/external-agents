@@ -1045,6 +1045,37 @@ else
       "doc=[$(printf '%s' "$mf_doc_sorted" | paste -sd' ' -)] src=[$(printf '%s' "$mf_src_sorted" | paste -sd' ' -)]"
 fi
 
+echo "== distribution-manifest oracle (listing fields well-formed + license/version consistency) =="
+# The marketplace/listing contract INSIDE .claude-plugin/plugin.json: homepage/repository must be
+# URL-shaped, license must be SPDX-ish AND equal the SPDX-License-Identifier in the LICENSE file, and
+# the version must equal the lockstep version. A MISSING listing field is empty -> fails its shape
+# check, so this oracle also catches an omitted field. Reuses MANIFEST (the packaging oracle's shared
+# source). Offline, no CLI.
+dist_home="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1])).get("homepage",""))' "$MANIFEST" 2>/dev/null)"
+dist_repo="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1])).get("repository",""))' "$MANIFEST" 2>/dev/null)"
+dist_lic="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1])).get("license",""))' "$MANIFEST" 2>/dev/null)"
+case "$dist_home" in https://*|http://*) ok "distribution: homepage is URL-shaped ($dist_home)";; *) bad "distribution: homepage is URL-shaped" "got '$dist_home'";; esac
+case "$dist_repo" in https://*|http://*) ok "distribution: repository is URL-shaped ($dist_repo)";; *) bad "distribution: repository is URL-shaped" "got '$dist_repo'";; esac
+if printf '%s' "$dist_lic" | grep -qE '^[A-Za-z0-9.+-]+$'; then
+  ok "distribution: license is an SPDX-ish identifier ($dist_lic)"
+else
+  bad "distribution: license is an SPDX-ish identifier" "got '$dist_lic'"
+fi
+# License consistency: manifest license must equal the SPDX-License-Identifier in the LICENSE file.
+dist_spdx="$(grep -oE 'SPDX-License-Identifier:[[:space:]]*[A-Za-z0-9.+-]+' "$ROOT/LICENSE" 2>/dev/null | head -1 | sed -E 's/.*:[[:space:]]*//')"
+if [ -n "$dist_lic" ] && [ "$dist_lic" = "$dist_spdx" ]; then
+  ok "distribution: manifest license matches the LICENSE SPDX identifier ($dist_lic)"
+else
+  bad "distribution: manifest license matches the LICENSE SPDX identifier" "manifest='$dist_lic' LICENSE='$dist_spdx'"
+fi
+dist_pv="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["version"])' "$MANIFEST" 2>/dev/null)"
+dist_sv="$(grep -oE '^  version: "[^"]+"' "$ROOT/skills/external-agents/SKILL.md" | head -1 | sed -E 's/.*"([^"]+)".*/\1/')"
+if [ -n "$dist_pv" ] && [ "$dist_pv" = "$dist_sv" ]; then
+  ok "distribution: manifest version equals the lockstep version ($dist_pv)"
+else
+  bad "distribution: manifest version equals the lockstep version" "plugin.json=$dist_pv SKILL.md=$dist_sv"
+fi
+
 echo "== dual-manifest decision lock (bumper references no .codex-plugin) =="
 # Phase 7.1 removed the dead .codex-plugin/plugin.json reference — the repo ships only
 # .claude-plugin/plugin.json. Lock that decision with a grep regression guard (mirroring the
