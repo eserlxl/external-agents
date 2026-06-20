@@ -50,6 +50,17 @@ for a in "${agents[@]}"; do
   else
     echo "e2e review-readonly: $a  FAIL (rc=$rc bytes=$bytes)" >&2; rv=1
   fi
+  # Enforced agents (codex/claude/cursor) must leave the fixture byte-identical — any change to
+  # git status --porcelain is a loud hard failure. (agy read-only is best-effort — next sub-phase.)
+  case "$a" in
+    codex|claude|cursor)
+      if [ -s "$ev/post.status" ]; then
+        echo "e2e review-readonly: $a  FAIL: enforced read-only MUTATED the fixture:" >&2
+        sed 's/^/    /' "$ev/post.status" >&2; rv=1
+      else
+        echo "e2e review-readonly: $a  no-mutation: fixture unchanged (enforced read-only)"
+      fi;;
+  esac
   rm -rf "$fx" "$out"
 done
 exit "$rv"
