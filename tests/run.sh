@@ -347,6 +347,41 @@ else
   skip "pipeline per-stage safety oracle (timeout/python3 unavailable)"
 fi
 
+echo "== stub-driven pipeline oracle (ordered dispatch + redacted-output seeding; both backends) =="
+# An N-stage pipeline of stub agents: assert (1) ordered dispatch (stage 1..N in the specified order),
+# (2) stage N+1's prompt is seeded from stage N's REDACTED artifact (the next stub echoes the prior
+# stage's marker), and (3) each stage records its artifacts — under jq AND a python3-only PATH.
+if command -v timeout >/dev/null 2>&1 && command -v python3 >/dev/null 2>&1; then
+  PIPE="$ROOT/scripts/run-pipeline.sh"
+  plrestr="$(mktemp -d)"; mk_restricted_bin "$plrestr"   # python3, NO jq -> forces JSON_BACKEND=py
+  pl_check() {  # label  bashbin  pathprefix
+    local lbl="$1" bb="$2" pp="$3" stub base tgt pd out order recs a s
+    stub="$(mktemp -d)"
+    printf '#!/usr/bin/env bash\necho "CODEX_MARK $*"\n'  >"$stub/codex";        chmod +x "$stub/codex"
+    printf '#!/usr/bin/env bash\necho "CLAUDE_MARK $*"\n' >"$stub/claude";       chmod +x "$stub/claude"
+    printf '#!/usr/bin/env bash\necho "CURSOR_MARK $*"\n' >"$stub/cursor-agent"; chmod +x "$stub/cursor-agent"
+    base="$(mktemp -d)"; tgt="$(mktemp -d)"
+    out="$(PATH="$stub:$pp" EXTERNAL_AGENTS_OUT="$base" "$bb" "$PIPE" --pipeline codex,claude,cursor --prompt BASEP --read-only --target "$tgt" 2>&1)"
+    pd="$(find "$base" -maxdepth 1 -type d -name 'pipeline-*' | head -1)"
+    order="$(printf '%s\n' "$out" | grep -oE 'stage [0-9]+/3 (codex|claude|cursor)' | paste -sd',' -)"
+    assert_contains "pipeline[$lbl]: ordered dispatch (codex->claude->cursor)" "$order" "stage 1/3 codex,stage 2/3 claude,stage 3/3 cursor"
+    assert_contains "pipeline[$lbl]: stage 2 seeded from stage 1's redacted artifact" "$(cat "$pd/2-claude/claude.md" 2>/dev/null)" "CODEX_MARK"
+    assert_contains "pipeline[$lbl]: stage 3 seeded from stage 2's redacted artifact" "$(cat "$pd/3-cursor/cursor.md" 2>/dev/null)" "CLAUDE_MARK"
+    recs=0
+    for s in 1-codex 2-claude 3-cursor; do
+      a="${s#*-}"
+      { [ -f "$pd/$s/$a.meta.json" ] && [ -f "$pd/$s/$a.argv" ] && [ -f "$pd/$s/$a.md" ]; } && recs=$((recs + 1))
+    done
+    assert_exit "pipeline[$lbl]: all 3 stages recorded meta/argv/md" 3 "$recs"
+    rm -rf "$stub" "$base" "$tgt"
+  }
+  pl_check jq "bash" "$PATH"
+  pl_check py "$plrestr/bin/bash" "$plrestr/bin"
+  rm -rf "$plrestr"
+else
+  skip "stub-driven pipeline oracle (timeout/python3 unavailable)"
+fi
+
 echo "== agents.json schema validation (draft-07 contract) =="
 if python3 -c 'import jsonschema' 2>/dev/null; then
   # schema_check FILE -> "OK" if FILE validates against schema/agents.schema.json, else "REJECTED".
