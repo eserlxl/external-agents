@@ -51,6 +51,13 @@ for a in "${agents[@]}"; do
   else
     echo "e2e edit-non-git: $a  FAIL (rc=$rc bytes=$bytes)" >&2; rv=1
   fi
+  # On a non-git target there is no git diff to confirm the write, so verify the requested marker
+  # line actually landed in notes.txt — otherwise an agent that wrote nothing would still pass.
+  if grep -qxF -- "$E2E_FIXTURE_MARKER" "$ng/notes.txt" 2>/dev/null; then
+    echo "e2e edit-non-git: $a  marker-content: notes.txt contains the expected '$E2E_FIXTURE_MARKER' line"
+  else
+    echo "e2e edit-non-git: $a  FAIL: notes.txt does not contain the expected marker line '$E2E_FIXTURE_MARKER'" >&2; rv=1
+  fi
   # The driver must WARN that there is no git baseline to diff or revert (run-agent.sh).
   if grep -q "no baseline to diff or revert" "$ev/driver.err" 2>/dev/null; then
     echo "e2e edit-non-git: $a  no-baseline warning captured (non-git target)"

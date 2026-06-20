@@ -974,13 +974,22 @@ echo "== e2e edit-non-git recipe oracle (stub-driven, offline) =="
 # and SUPPRESS the post-write verification block. The stub keeps it offline; EXTERNAL_AGENTS_LIVE=1 arms it.
 if command -v timeout >/dev/null 2>&1; then
   eng="$(mktemp -d)"; engd="$(mktemp -d)"
-  printf '#!/usr/bin/env bash\nprintf "edited\\n"\nprintf "appended\\n" >> notes.txt\n' >"$eng/codex"; chmod +x "$eng/codex"
+  printf '#!/usr/bin/env bash\nprintf "edited\\n"\nprintf "%%s\\n" "%s" >> notes.txt\n' \
+    "$E2E_FIXTURE_MARKER" >"$eng/codex"; chmod +x "$eng/codex"
   eng_out="$(PATH="$eng:$PATH" EXTERNAL_AGENTS_LIVE=1 EXTERNAL_AGENTS_OUT="$engd" \
     bash "$ROOT/tests/e2e/edit-non-git.sh" codex 2>&1)"; eng_rc=$?
-  assert_exit     "edit-non-git recipe: stub write -> pass (exit 0)"  0 "$eng_rc"
-  assert_contains "edit-non-git recipe: no-baseline warning captured" "$eng_out" "no-baseline warning captured"
-  assert_contains "edit-non-git recipe: post-write block suppressed"  "$eng_out" "post-write block correctly suppressed"
+  assert_exit     "edit-non-git recipe: marker write -> pass (exit 0)" 0 "$eng_rc"
+  assert_contains "edit-non-git recipe: no-baseline warning captured"  "$eng_out" "no-baseline warning captured"
+  assert_contains "edit-non-git recipe: post-write block suppressed"   "$eng_out" "post-write block correctly suppressed"
+  assert_contains "edit-non-git recipe: marker-content asserted"        "$eng_out" "marker-content: notes.txt contains the expected"
   rm -rf "$eng" "$engd"
+  # Negative: a stub that writes nothing must fail the strengthened marker oracle.
+  engn="$(mktemp -d)"; engnd="$(mktemp -d)"
+  printf '#!/usr/bin/env bash\nprintf "did nothing\\n"\n' >"$engn/codex"; chmod +x "$engn/codex"
+  PATH="$engn:$PATH" EXTERNAL_AGENTS_LIVE=1 EXTERNAL_AGENTS_OUT="$engnd" \
+    bash "$ROOT/tests/e2e/edit-non-git.sh" codex >/dev/null 2>&1
+  assert_exit "edit-non-git recipe: no write -> fail (non-zero)" 1 "$?"
+  rm -rf "$engn" "$engnd"
 else
   skip "e2e edit-non-git recipe oracle (timeout unavailable)"
 fi
