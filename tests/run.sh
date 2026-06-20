@@ -738,6 +738,17 @@ grep -q 'version-1.2.3-informational' "$ft/README.md"; assert_exit "bump write: 
 grep -q '## \[1.2.3\]' "$ft/CHANGELOG.md"; assert_exit "bump write: CHANGELOG entry added" 0 "$?"
 rm -rf "$ft"
 
+echo "== dual-manifest decision lock (bumper references no .codex-plugin) =="
+# Phase 7.1 removed the dead .codex-plugin/plugin.json reference — the repo ships only
+# .claude-plugin/plugin.json. Lock that decision with a grep regression guard (mirroring the
+# shellcheck-regression guard below): the bumper must not reference a non-existent .codex-plugin
+# manifest again, which neither shellcheck nor the lockstep tests would otherwise catch.
+if grep -q 'codex-plugin' "$ROOT/scripts/bump-version.sh"; then
+  bad "bumper references no non-existent .codex-plugin manifest" "found a .codex-plugin reference in scripts/bump-version.sh"
+else
+  ok "bumper references no non-existent .codex-plugin manifest"
+fi
+
 echo "== --check preflight (diagnostic; restricted PATH, no agent CLIs) =="
 # Run --check with a PATH that holds the shell utilities but NONE of the agent CLIs,
 # so every candidate (agy/codex/claude/cursor) must be reported missing and the exit
