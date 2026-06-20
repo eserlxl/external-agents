@@ -365,6 +365,24 @@ write_status_record() {
     printf '%-7s %s\n' "$kn" "${AGENT_STATUS[$kn]:-unknown}" >>"$LIVE_OUT/status.txt"
   done
   echo "live smoke: per-agent status recorded at $LIVE_OUT/status.txt"
+  write_provenance_record
+}
+
+# write_provenance_record — write a content-free freshness/scope stamp next to status.txt so a stale
+# record is never mistaken for current. Carries ONLY a UTC timestamp, the plugin/driver version
+# (read from .claude-plugin/plugin.json), and the resolved agent-set NAMES — never a quota value,
+# account id, token, or transcript text (mirrors the quota-schema "keys/shape only, never a value"
+# discipline). Best-effort: any failure is swallowed and never fails the run.
+write_provenance_record() {
+  local ver
+  mkdir -p "$LIVE_OUT" 2>/dev/null || return 0
+  ver="$(grep -oE '"version"[[:space:]]*:[[:space:]]*"[^"]+"' "$ROOT/.claude-plugin/plugin.json" 2>/dev/null | head -1 | sed -E 's/.*"([^"]+)".*/\1/')"
+  {
+    printf 'recorded-utc: %s\n'    "$(date -u +%Y-%m-%dT%H:%M:%SZ 2>/dev/null)"
+    printf 'plugin-version: %s\n'  "${ver:-unknown}"
+    printf 'resolved-agents: %s\n' "$KNOWN_AGENTS"
+  } >"$LIVE_OUT/provenance.txt" 2>/dev/null || return 0
+  echo "live smoke: provenance recorded at $LIVE_OUT/provenance.txt"
 }
 
 # main — the live run. Runs ONLY when this script is executed directly (see the guard at the
