@@ -1865,6 +1865,37 @@ else
   bad "docs/e2e-recipe.md documents the offline stub-driven oracle coverage" "doc drifted: missing the stub-driven offline oracle note"
 fi
 
+echo "== Phase 8 opt-in live hooks stay outside the required offline gate =="
+# Phase 8.2 added an opt-in live error_class hook to tests/live-smoke.sh (recorded ONLY when armed).
+# Re-assert the offline boundary WITH that hook present: (1) an unarmed live-smoke.sh run writes NO
+# error-class.txt (the Phase 8 hook is gated behind EXTERNAL_AGENTS_LIVE), and (2) the required CI job
+# gained only the OFFLINE run-record schema step — no live CLI / live harness reference.
+p8out="$(mktemp -d)"
+env -u EXTERNAL_AGENTS_LIVE EXTERNAL_AGENTS_OUT="$p8out" bash "$ROOT/tests/live-smoke.sh" >/dev/null 2>&1; p8rc=$?
+assert_exit "phase8 gate: unarmed live-smoke exits 0" 0 "$p8rc"
+if [ -f "$p8out/live-smoke/error-class.txt" ]; then
+  bad "phase8 gate: unarmed live-smoke writes NO error-class.txt (Phase 8 hook gated)" "error-class.txt was written without the arming switch"
+else
+  ok "phase8 gate: unarmed live-smoke writes NO error-class.txt (Phase 8 hook gated)"
+fi
+rm -rf "$p8out"
+ci_yml8="$ROOT/.github/workflows/ci.yml"
+if [ -f "$ci_yml8" ]; then
+  ci_active8="$(grep -vE '^[[:space:]]*#' "$ci_yml8")"
+  if printf '%s\n' "$ci_active8" | grep -qF 'run-record.schema.json'; then
+    ok "phase8 gate: required CI job validates the run-record schema (offline step present)"
+  else
+    bad "phase8 gate: required CI job validates the run-record schema (offline step present)" "ci.yml has no run-record schema step"
+  fi
+  if printf '%s\n' "$ci_active8" | grep -qE 'live-smoke\.sh|run-e2e\.sh|EXTERNAL_AGENTS_LIVE|antigravity-usage|cursor-agent'; then
+    bad "phase8 gate: no live CLI/harness in the required job (with Phase 8 steps present)" "ci.yml active lines reference a live harness/CLI"
+  else
+    ok "phase8 gate: no live CLI/harness in the required job (with Phase 8 steps present)"
+  fi
+else
+  bad "phase8 gate: ci.yml present" "missing .github/workflows/ci.yml"
+fi
+
 echo "== ci.yml required-job offline boundary (no live harness in the required gate) =="
 # P0-01: the required CI check job is offline-by-design — it must NEVER invoke the opt-in live harness
 # (tests/live-smoke.sh), the e2e recipes (tests/e2e/, run-e2e.sh), or arm EXTERNAL_AGENTS_LIVE, which
