@@ -28,6 +28,11 @@ SMOKE_PROMPT="${EXTERNAL_AGENTS_LIVE_PROMPT:-Reply with the single word: ok}"
 # keeps the (mode x prompt-source) matrix light while still exercising the real run path.
 SMOKE_TIMEOUT="${EXTERNAL_AGENTS_LIVE_TIMEOUT:-60}"
 
+# Where the auditable per-agent status record lands (M4 evidence), under the transcript dir
+# base. KNOWN_AGENTS fixes the record's line order so the record is deterministic.
+LIVE_OUT="${EXTERNAL_AGENTS_OUT:-$HOME/.external-agents/logs}/live-smoke"
+KNOWN_AGENTS="agy codex claude cursor"
+
 # live_argv_record OUTDIR AGENT — print the masked launch-argv record run_one writes for
 # AGENT under OUTDIR ($OUTDIR/<agent>.argv): the resolved argv with the prompt shown as
 # <PROMPT>, secret/PII-free.
@@ -213,12 +218,29 @@ smoke_agent() {  # agent
   return "$rv"
 }
 
+# write_status_record — write a deterministic per-agent status record (one "<agent>  <status>"
+# line per known agent, in KNOWN_AGENTS order) to $LIVE_OUT/status.txt, so which agents are
+# live-verified in this environment is auditable M4 evidence. Reads the caller's AGENT_STATUS
+# associative array (dynamic scope). Best-effort: never fails the run.
+write_status_record() {
+  local kn
+  mkdir -p "$LIVE_OUT" 2>/dev/null || return 0
+  : >"$LIVE_OUT/status.txt" 2>/dev/null || return 0
+  for kn in $KNOWN_AGENTS; do
+    printf '%-7s %s\n' "$kn" "${AGENT_STATUS[$kn]:-unknown}" >>"$LIVE_OUT/status.txt"
+  done
+  echo "live smoke: per-agent status recorded at $LIVE_OUT/status.txt"
+}
+
 # main — the live run. Runs ONLY when this script is executed directly (see the guard at the
 # bottom); sourcing the file for unit tests defines the helpers above without running this.
 main() {
-  local LIVE="${EXTERNAL_AGENTS_LIVE:-0}"
+  local LIVE="${EXTERNAL_AGENTS_LIVE:-0}" kn
+  local -A AGENT_STATUS
   if [ "$LIVE" != "1" ]; then
     echo "live smoke skipped (set EXTERNAL_AGENTS_LIVE=1)"
+    for kn in $KNOWN_AGENTS; do AGENT_STATUS[$kn]=skipped-not-opted-in; done
+    write_status_record
     return 0
   fi
   [ -x "$RUN" ] || { echo "live smoke: driver not found at $RUN" >&2; return 1; }
@@ -246,9 +268,9 @@ main() {
   while read -r a state _; do
     [ -n "$a" ] || continue
     if [ "$state" = "present" ]; then
-      reachable+=("$a")
+      reachable+=("$a"); AGENT_STATUS[$a]=reachable
     else
-      echo "live smoke: $a skipped (not reachable on PATH)"
+      echo "live smoke: $a skipped (not reachable on PATH)"; AGENT_STATUS[$a]=skipped-not-reachable
     fi
   done <<EOF
 $discovered
@@ -266,8 +288,14 @@ EOF
     verify=(${reachable[@]+"${reachable[@]}"})
   fi
 
+  # A reachable agent left out by an --agent scope is recorded as scoped-out (not verified).
+  for a in ${reachable[@]+"${reachable[@]}"}; do
+    case " ${verify[*]} " in *" $a "*) ;; *) AGENT_STATUS[$a]=skipped-scoped-out;; esac
+  done
+
   if [ "${#verify[@]}" -eq 0 ]; then
     echo "live smoke: no reachable agents to verify — nothing to do (exit 0)"
+    write_status_record
     return 0
   fi
   echo "live smoke: verifying ${verify[*]}"
@@ -279,15 +307,19 @@ EOF
   # transcript and argv-match gates apply to every agent.
   local fails=0 mode src
   for a in "${verify[@]}"; do
+    local agent_fail=0
     for mode in ${argv_modes[@]+"${argv_modes[@]}"}; do
       for src in prompt prompt-file; do
-        argv_equiv "$a" "$mode" "$src" || fails=$((fails + 1))
+        argv_equiv "$a" "$mode" "$src" || agent_fail=1
       done
     done
-    smoke_agent "$a" || fails=$((fails + 1))
+    smoke_agent "$a" || agent_fail=1
+    if [ "$agent_fail" -eq 0 ]; then AGENT_STATUS[$a]=live-verified; else AGENT_STATUS[$a]=failed; fi
+    fails=$((fails + agent_fail))
   done
+  write_status_record
   if [ "$fails" -gt 0 ]; then
-    echo "live smoke: $fails live check(s) failed for ${verify[*]}" >&2
+    echo "live smoke: $fails agent(s) failed live checks for ${verify[*]}" >&2
     return 1
   fi
   echo "live smoke: all live checks passed for ${verify[*]} (argv matrix + end-to-end smoke)"
