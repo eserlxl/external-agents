@@ -138,4 +138,5 @@ What it does, armed:
 
 Override the tags with `EXTERNAL_AGENTS_INSTALL_TAG`, `EXTERNAL_AGENTS_UPGRADE_FROM`, and
 `EXTERNAL_AGENTS_UPGRADE_TO`. A passing `--check` proves **presence**, not readiness — readiness
-(authenticated, round-tripping agents) is deferred to the per-agent auth contract and the live smoke.
+(authenticated, round-tripping agents) is deferred to the
+[per-agent auth prerequisites](README.md#per-agent-auth-prerequisites-readiness) and the live smoke.

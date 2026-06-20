@@ -95,7 +95,16 @@ CLI signed in and able to respond?) needs an authenticated, networked call that 
 side-effect-free, and wiring it into `--check` would couple the offline gate to live CLIs — so it is
 deliberately deferred. **Authentication is your responsibility:** sign each agent in once (e.g.
 `cursor-agent login`, plus the sign-in `codex` / `agy` / `claude` each need), then confirm a real
-round-trip with the opt-in [live smoke harness](#live-smoke-opt-in).
+round-trip with the opt-in [live smoke harness](#live-smoke-opt-in). The exact per-agent sign-in step
+and what "ready" means for each agent are consolidated in the
+[per-agent auth prerequisites](#per-agent-auth-prerequisites-readiness) reference below.
+
+**Presence vs. readiness, end to end.** Three checks, three guarantees, in order of strength: the
+[release tag-gate](RELEASING.md) check confirms a published tag equals the lockstep version;
+`--check` (offline, exits non-zero on a missing CLI) proves **presence**; and the opt-in live smoke
+plus the [per-agent auth prerequisites](#per-agent-auth-prerequisites-readiness) prove **readiness**
+(an authenticated agent that actually round-trips). The offline gate performs the presence check and
+the tag check, but **never** the auth step — readiness is always an explicit, opt-in act.
 
 **Verifying a packaged release.** Beyond `--check`, an opt-in install/upgrade smoke
 ([`tests/install-smoke.sh`](tests/install-smoke.sh)) proves the package installs and upgrades **from a
