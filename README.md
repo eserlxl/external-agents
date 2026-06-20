@@ -313,6 +313,18 @@ harness prints names exactly why a step ran or was skipped:
 read-only probe succeed) — it never **captures, prints, or stores** tokens, API keys, or credentials.
 No secret is read into a variable or written to any recorded evidence.
 
+**Argv equivalence.** For each reachable agent the harness captures the **exact launch argv** the
+driver builds for a real run (`run-agent.sh` records it to `$OUT/<agent>.argv` with the prompt masked
+to `<PROMPT>`, so the record holds no prompt text or secret) and asserts it is **byte-identical** to
+the `--dry-run` argv — across both modes (`--read-only`/`--write`) and both prompt sources
+(`--prompt`/`--prompt-file`), covering every resolution path. This turns "the launch command is
+correct" from an offline claim into a live-verified fact. Run it for one agent or all:
+
+```bash
+EXTERNAL_AGENTS_LIVE=1 bash tests/live-smoke.sh --agent codex   # one agent
+EXTERNAL_AGENTS_LIVE=1 bash tests/live-smoke.sh                 # every reachable agent
+```
+
 ## Files
 
 ```
