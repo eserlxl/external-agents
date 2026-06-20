@@ -457,6 +457,26 @@ The record's field set and JSON types are published as a draft-07 contract in
 **additive-only stability policy** (which changes require a major version bump) are in
 [`docs/run-record-contract.md`](docs/run-record-contract.md).
 
+### Error classification
+
+Every run is classified into **one** of a closed set of error classes, so a caller can tell a
+recoverable failure from a permanent one (recorded as the per-run record's `error_class` field):
+
+| class | meaning | retryable? |
+|-------|---------|------------|
+| `ok` | the run succeeded (`rc` 0) | n/a (success) |
+| `safety-refusal` | a driver pre-launch gate refused — containment, the non-cwd `--yes` confirmation, `--read-only`/`--write` exclusion, or an invalid `--timeout` | **never** (a deliberate guard, not a transient state) |
+| `timeout` | the run exceeded `--timeout` | retryable (opt-in) |
+| `transient` | a recoverable external failure (network blip, provider 5xx / rate-limit shaped) | retryable |
+| `auth` | the agent is unauthenticated or its credentials were rejected | no (re-authenticate first) |
+| `contract` | the agent broke the expected contract (malformed/empty output) | no |
+| `unknown` | an unclassified non-zero exit | no (conservative default) |
+
+The **retryable subset** is `transient` (always) and `timeout` (opt-in). A `safety-refusal` is
+**never** retried — retrying would only repeat the same deliberate refusal. This taxonomy is the
+canonical contract; the driver comment in `scripts/run-agent.sh` (above `run_one`) and the
+[threat model](docs/threat-model.md#error-classification-and-retry-safety) restate the same closed set.
+
 **Where it lives.** The record is written to `<transcript-dir>/<agent>.meta.json` — the *same*
 per-project directory as that agent's transcript (default `~/.external-agents/logs/<project>`,
 overridable via [`--out`](#options) or the `EXTERNAL_AGENTS_OUT` base). One file per agent per run,

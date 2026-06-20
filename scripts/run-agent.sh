@@ -722,6 +722,24 @@ PY
   esac
 }
 
+# --- error taxonomy (Phase 8.2) ---------------------------------------------------
+# A run's outcome is classified into ONE of a CLOSED set of error classes so a caller can tell a
+# recoverable failure from a permanent one. This comment is the canonical map; it MUST agree with the
+# "Error classification" subsection in README.md and docs/threat-model.md.
+#
+#   class           meaning                                                         retryable?
+#   ok              the run succeeded (rc 0); not an error                          n/a (success)
+#   safety-refusal  a driver pre-launch gate refused: containment, the non-cwd      NEVER — retrying
+#                   --yes confirmation, --read-only/--write exclusion, or an        repeats the same
+#                   invalid --timeout. A deliberate guard, not a transient state.   deliberate refusal
+#   timeout         the run exceeded --timeout (the timeout wrapper killed it)      retryable (opt-in)
+#   transient       a recoverable external failure (network blip, provider 5xx /   retryable
+#                   rate-limit shaped)
+#   auth            the agent is unauthenticated / its credentials were rejected    NO (re-auth first)
+#   contract        the agent broke the expected contract (malformed/empty output)  NO
+#   unknown         an unclassified non-zero exit                                   NO (conservative)
+#
+# Retryable subset = { transient (always), timeout (opt-in) }. safety-refusal is NEVER retryable.
 run_one() {  # agent  (cwd=TARGET) — stdout->$OUT/<a>.md (redacted), stderr->.err, rc/.sec, .meta.json
   local a="$1" t0 t1 rc ts bytes reff tok cost
   build_argv "$a" || return 1

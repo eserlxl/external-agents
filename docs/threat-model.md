@@ -85,3 +85,14 @@ parsed from the transcript. They therefore carry no prompt, no agent free-text, 
 field-by-field contract and stability policy are in
 [run-record-contract.md](run-record-contract.md); the offline suite asserts the records stay
 secret-free.
+
+## Error classification and retry safety
+
+Run outcomes are classified into a closed set — `ok`, `safety-refusal`, `timeout`, `transient`,
+`auth`, `contract`, `unknown` (see the README
+[Error classification](../README.md#error-classification) table and the `run_one` comment in
+`scripts/run-agent.sh`, which state the same set). The security-relevant invariant: a
+**`safety-refusal`** — the containment gate, the non-cwd `--yes` confirmation, the
+`--read-only`/`--write` exclusion, or `--timeout` validation — is **never retryable**. Those gates are
+deliberate refusals, not transient conditions, so an automated retry must never re-attempt a run a
+safety gate rejected; only `transient` (and, opt-in, `timeout`) outcomes are eligible for retry.
