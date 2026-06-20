@@ -360,6 +360,32 @@ resolved — never the transcript, never the prompt — no agent free-text, prom
 secret-shaped token can reach it (the transcript itself is separately [redacted](#safety)). So
 `*.meta.json` is safe to collect, ship, or index for run history.
 
+### Run index
+
+Alongside the per-run records, the driver maintains a single durable **run index** — an append-only
+[JSON Lines](https://jsonlines.org/) file that accrues **one row per agent per run** across *all*
+projects, so you get a chronological run history without walking the per-project transcript tree.
+
+**Where it lives.** `<base>/index.jsonl`, where `<base>` is the transcript root
+(`EXTERNAL_AGENTS_OUT`, default `~/.external-agents/logs`); with an explicit `--out DIR` the index is
+written inside that directory. It is **append-only** — never rewritten — so each row is a permanent
+record of one agent run and concurrent runs simply append.
+
+**Row fields.** Each line is one JSON object: a run id and timestamp that group a fan-out, the
+project namespace, and the same post-fallback resolved fields the
+[per-run record](#per-run-metadata-record) carries:
+
+| field | meaning |
+|-------|---------|
+| `run_id` | groups the agents of one invocation (a `--agent all` fan-out shares one `run_id`) |
+| `timestamp` | run launch time, UTC ISO-8601 |
+| `project` | the `<project>` transcript namespace (repo / repo/subdir / leaf) |
+| `agent`, `model`, `tier`, `effort`, `mode`, `target`, `rc`, `sec`, `bytes`, `fallback` | the per-run [resolved fields](#per-run-metadata-record) (post-fallback, control-plane only) |
+
+Like the per-run record, every row is **control-plane only** — built from values resolved at
+launch/collect, never the transcript — so the index never accrues agent free-text, prompt text, or
+secrets.
+
 ## Safety
 
 For the full trust-boundary analysis and the per-CLI enforcement matrix, see
