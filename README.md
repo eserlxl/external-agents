@@ -223,6 +223,14 @@ primary **only when quota is positively confirmed available**. If the primary is
 > `EXTERNAL_AGENTS_AGY_QUOTA_TIMEOUT` (seconds to wait for `antigravity-usage`; default `20`),
 > or `EXTERNAL_AGENTS_AGY_QUOTA_CMD` (override the quota command).
 
+This quota-fallback is **verified against the real CLI** by the opt-in
+[live harness](#live-smoke-opt-in): it feeds the real `antigravity-usage` output through the
+driver's resolver and asserts the decision matches the quota state (primary **iff** available, else
+the Gemini fallback). The probe is **read-only** — it never calls the quota-spending `wakeup` — and
+when the quota is unconfirmable (IDE closed / not logged in) it degrades to the fallback, **never**
+spending the unconfirmed primary. It also records the real output's keys/types (no values) as a
+schema-drift detector.
+
 ## Safety
 
 For the full trust-boundary analysis and the per-CLI enforcement matrix, see

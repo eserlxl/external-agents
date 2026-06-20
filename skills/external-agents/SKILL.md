@@ -25,6 +25,9 @@ result back. The agents are real CLIs already on the machine:
   runs only when `antigravity-usage` confirms remaining quota — else it falls back to a
   larger-limit Gemini model. Needs the Antigravity IDE open (or `antigravity-usage login`);
   tell the user this if they want agy's Opus/Sonnet tiers and the run keeps falling back to Gemini.
+  The fallback decision is **read-only** (never the quota-spending `wakeup`) and is verified against
+  the real CLI by the opt-in live harness (`tests/live-smoke.sh`): primary iff available, else the
+  Gemini fallback, degrading to the fallback whenever the quota is unconfirmable.
 - **codex** — OpenAI Codex CLI (`codex exec`)
 - **cursor** — Cursor's headless agent CLI (`cursor-agent`), running Cursor's own models (Composer 2.5)
 - **claude** — a nested Claude Code session (available, not in the default `all` set)
