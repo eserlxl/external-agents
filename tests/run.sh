@@ -169,6 +169,66 @@ for a in agy codex claude cursor; do
 done
 rm -rf "$rapd" "$ratgt"
 
+# make_fixture_driver DIR — write a COPY of the driver into DIR/run-agent.sh with a fixture agent
+# added ONLY via the registry boundary (ADAPTER_AGENTS/BIN/ENFORCEMENT + a thin argv_fixture builder)
+# — the exact, localized two-edit add (no policy code touched) — plus DIR/agents.json (--conf). Shared
+# by the Phase 9.3 fixture oracles below. fixbin is the fixture's CLI; tier medium -> model fix-mid.
+make_fixture_driver() {
+  local d="$1"
+  python3 - "$RUN" "$d/run-agent.sh" <<'PY'
+import sys
+src = open(sys.argv[1]).read()
+src = src.replace("ADAPTER_AGENTS=(agy codex claude cursor)", "ADAPTER_AGENTS=(agy codex claude cursor fixture)")
+src = src.replace('[cursor]="cursor-agent" )', '[cursor]="cursor-agent" [fixture]="fixbin" )')
+src = src.replace('[cursor]="enforced" )', '[cursor]="enforced" [fixture]="enforced" )')
+builder = (
+    'argv_fixture() {\n'
+    '  local m="$1"\n'
+    '  if [ "$MODE" = "readonly" ]; then ARGV=(fixbin --plan -C "$TARGET"); else ARGV=(fixbin --apply -C "$TARGET"); fi\n'
+    '  [ -n "$m" ] && ARGV+=(--model "$m")\n'
+    '  ARGV+=(-- "$PROMPT"); PROMPT_IDX=$(( ${#ARGV[@]} - 1 ))\n'
+    '}\n'
+)
+marker = "# --- build one agent's argv"
+src = src.replace(marker, builder + marker, 1)
+open(sys.argv[2], "w").write(src)
+PY
+  cat >"$d/agents.json" <<'JSON'
+{ "default_tier": "medium",
+  "agents": { "fixture": { "enabled": true, "tiers": {
+    "low": { "model": "fix-small" }, "medium": { "model": "fix-mid" },
+    "high": { "model": "fix-big" }, "xhigh": { "model": "fix-max" } } } } }
+JSON
+}
+
+echo "== fixture-agent extensibility oracle (registry entry + agents.json, no policy edits; both backends) =="
+# Phase 9's signal: an agent added ONLY via a registry entry + an agents.json block (no policy edits)
+# resolves its tier, builds correct read-only/write argv, and is reported present by --check/--discover.
+if command -v python3 >/dev/null 2>&1; then
+  fxd="$(mktemp -d)"; make_fixture_driver "$fxd"
+  fxrestr="$(mktemp -d)"; mk_restricted_bin "$fxrestr"   # python3, NO jq -> forces the python3 backend
+  fx_check() {  # label bashbin pathprefix
+    local lbl="$1" bb="$2" pp="$3" stub wtgt ro wr disc chk
+    stub="$(mktemp -d)"; printf '#!/usr/bin/env bash\necho fix\n' >"$stub/fixbin"; chmod +x "$stub/fixbin"
+    wtgt="$(mktemp -d)"
+    ro="$(PATH="$stub:$pp" "$bb" "$fxd/run-agent.sh" --conf "$fxd/agents.json" --agent fixture --read-only --dry-run --prompt x 2>/dev/null)"
+    wr="$(PATH="$stub:$pp" "$bb" "$fxd/run-agent.sh" --conf "$fxd/agents.json" --agent fixture --write --yes --target "$wtgt" --dry-run --prompt x 2>/dev/null)"
+    disc="$(PATH="$stub:$pp" "$bb" "$fxd/run-agent.sh" --conf "$fxd/agents.json" --discover 2>/dev/null)"
+    chk="$(PATH="$stub:$pp" "$bb" "$fxd/run-agent.sh" --conf "$fxd/agents.json" --agent fixture --check 2>/dev/null)"
+    rm -rf "$stub" "$wtgt"
+    assert_contains "fixture[$lbl]: read-only argv shape (--plan)"           "$ro"   "fixbin --plan -C"
+    assert_contains "fixture[$lbl]: read-only resolves the medium-tier model" "$ro"   "fix-mid"
+    assert_contains "fixture[$lbl]: write argv shape (--apply)"               "$wr"   "fixbin --apply -C"
+    assert_contains "fixture[$lbl]: --discover reports it present"            "$disc" "fixture present"
+    assert_contains "fixture[$lbl]: --check reports it present"               "$chk"  "ok   fixture"
+  }
+  fx_check jq "bash" "$PATH"
+  fx_check py "$fxrestr/bin/bash" "$fxrestr/bin"
+  rm -rf "$fxrestr" "$fxd"
+else
+  skip "fixture-agent extensibility oracle (python3 unavailable)"
+fi
+
 echo "== agents.json schema validation (draft-07 contract) =="
 if python3 -c 'import jsonschema' 2>/dev/null; then
   # schema_check FILE -> "OK" if FILE validates against schema/agents.schema.json, else "REJECTED".
