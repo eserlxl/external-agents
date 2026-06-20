@@ -916,6 +916,48 @@ grep -q 'version-1.2.3-informational' "$ft/README.md"; assert_exit "bump write: 
 grep -q '## \[1.2.3\]' "$ft/CHANGELOG.md"; assert_exit "bump write: CHANGELOG entry added" 0 "$?"
 rm -rf "$ft"
 
+echo "== release tag-gate oracle (RELEASING.md tag==version check; throwaway git fixture, real tags untouched) =="
+# Extracts the canonical tag-check snippet from RELEASING.md "Verify the tag matches the version"
+# and runs it against a DISPOSABLE git repo (under mktemp) in three states: a matching tag passes
+# (exit 0, OK), a mismatched tag fails (exit 1, MISMATCH naming the expected version), and no
+# exact-match tag reports a clear <none> diagnostic. RELEASING.md stays the single source of the
+# check; this block is the offline regression guard. No tag is ever created on the real repository.
+if command -v git >/dev/null 2>&1 && command -v python3 >/dev/null 2>&1; then
+  tg="$(mktemp -d)"
+  awk '/^## Verify the tag matches the version/{f=1} f&&/^```bash/{c=1;next} c&&/^```/{exit} c{print}' "$ROOT/RELEASING.md" >"$tg/gate.sh"
+  if [ -s "$tg/gate.sh" ]; then
+    mkdir -p "$tg/.claude-plugin"
+    printf '{\n  "version": "9.9.9"\n}\n' >"$tg/.claude-plugin/plugin.json"
+    (
+      cd "$tg" || exit 0
+      git init -q
+      git config user.email t@example.invalid; git config user.name t
+      git config commit.gpgsign false; git config tag.gpgSign false
+      git add -A; git commit -qm init
+      { bash gate.sh; echo "RC=$?"; } >none.out 2>&1   # no exact-match tag yet
+      git tag -a v9.9.9 -m x
+      { bash gate.sh; echo "RC=$?"; } >ok.out 2>&1     # tag == v<version>
+      git tag -d v9.9.9 >/dev/null; git tag -a v0.0.1 -m x
+      { bash gate.sh; echo "RC=$?"; } >mis.out 2>&1    # tag != v<version>
+    ) >/dev/null 2>&1
+    none_out="$(cat "$tg/none.out" 2>/dev/null)"
+    ok_out="$(cat "$tg/ok.out" 2>/dev/null)"
+    mis_out="$(cat "$tg/mis.out" 2>/dev/null)"
+    assert_contains "tag-gate: no exact-match tag reports <none>" "$none_out" "<none>"
+    assert_contains "tag-gate: no-tag case exits non-zero"        "$none_out" "RC=1"
+    assert_contains "tag-gate: matching tag v9.9.9 passes (OK)"   "$ok_out"   "OK: tag v9.9.9"
+    assert_contains "tag-gate: matching tag exits 0"              "$ok_out"   "RC=0"
+    assert_contains "tag-gate: mismatched tag reports MISMATCH"   "$mis_out"  "MISMATCH"
+    assert_contains "tag-gate: mismatch names expected v9.9.9"    "$mis_out"  "!= v9.9.9"
+    assert_contains "tag-gate: mismatch case exits non-zero"      "$mis_out"  "RC=1"
+  else
+    bad "release tag-gate oracle: could not extract the check from RELEASING.md" "snippet under '## Verify the tag matches the version' not found"
+  fi
+  rm -rf "$tg"
+else
+  skip "release tag-gate oracle (git/python3 unavailable)"
+fi
+
 echo "== dual-manifest decision lock (bumper references no .codex-plugin) =="
 # Phase 7.1 removed the dead .codex-plugin/plugin.json reference — the repo ships only
 # .claude-plugin/plugin.json. Lock that decision with a grep regression guard (mirroring the
