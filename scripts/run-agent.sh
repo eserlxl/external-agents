@@ -701,6 +701,16 @@ if [ "${#RUN[@]}" -gt 1 ]; then
   # On a write fan-out every agent shares ONE target tree, so the post-write git verification
   # below is TARGET-WIDE — it cannot attribute a change to a specific agent. Say so explicitly.
   [ "$MODE" = "write" ] && echo "  note: write fan-out — the 'git changes after write' block is target-wide (all agents share one tree), not per-agent attribution."
+  # For a read-only fan-out on a git target, surface whether the shared tree is unchanged — every
+  # agent's read-only mode should leave it byte-identical (agy is best-effort). Deterministic and
+  # content-free, generalising the post-write git check to read-only.
+  if [ "$MODE" = "readonly" ] && [ -n "$TOP" ]; then
+    if [ -z "$(git -C "$TARGET" status --porcelain 2>/dev/null)" ]; then
+      echo "  no-mutation: all agents left the tree unchanged (read-only)"
+    else
+      echo "  no-mutation: the tree is NOT clean after a read-only fan-out (agy is best-effort, or pre-existing changes — inspect 'git status')"
+    fi
+  fi
   # Deterministic outcome agreement from the per-agent success tally (all-ok / mixed / all-fail).
   # This is an OUTCOME signal, not semantic content agreement (which needs a confirmed schema).
   if [ "$fail" -eq 0 ]; then echo "  agreement: all-ok ($ok/$((ok + fail)) agents succeeded)"

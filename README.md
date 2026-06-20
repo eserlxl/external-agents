@@ -280,6 +280,8 @@ summary.
 
 The summary closes with a deterministic **agreement** line derived from the success tally —
 `all-ok`, `mixed`, or `all-fail` — so a caller gets an at-a-glance outcome signal for the fan-out.
+For a **read-only** fan-out on a git target it also adds a **no-mutation** line stating whether all
+agents left the shared tree unchanged (every read-only mode should — agy is best-effort).
 
 ## Safety
 
