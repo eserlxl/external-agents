@@ -1076,6 +1076,17 @@ else
   skip "e2e run-e2e.sh dispatch (timeout unavailable)"
 fi
 
+echo "== e2e run-e2e.sh no-reachable-agents path (armed, restricted PATH) =="
+# Armed (EXTERNAL_AGENTS_LIVE=1) but with NO agent CLI on PATH, run-e2e.sh must exit 0 with a clear
+# "no reachable agents" message — absence is a clean no-op, never a failure or a launch. Reuses the
+# restricted-bin technique (shell utils present, no agent CLIs), so discovery finds nothing reachable.
+nrdir="$(mktemp -d)"; mk_restricted_bin "$nrdir"; nrod="$(mktemp -d)"
+nr_out="$(PATH="$nrdir/bin" EXTERNAL_AGENTS_LIVE=1 EXTERNAL_AGENTS_OUT="$nrod" \
+  "$nrdir/bin/bash" "$ROOT/tests/e2e/run-e2e.sh" 2>&1)"; nr_rc=$?
+rm -rf "$nrdir" "$nrod"
+assert_exit     "run-e2e.sh: armed + no agent CLIs -> exit 0" 0 "$nr_rc"
+assert_contains "run-e2e.sh: reports no reachable agents"      "$nr_out" "no reachable agents"
+
 echo "== e2e recipe dispatch drift guard (run-e2e.sh list == recipe files) =="
 # run-e2e.sh hardcodes the recipes it dispatches (`for recipe in ...`); a recipe file added without
 # updating that list — or removed while still listed — would be silently never run. Assert the
