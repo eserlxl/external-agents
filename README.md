@@ -308,10 +308,10 @@ signal, all control-plane facts (no transcript content):
 
 The offline suite validates that the emitted document is well-formed and carries these required keys.
 
-The document is written to **stdout** alongside the human output. **Durable persistence and a stable
-on-disk location are intentionally deferred to a later phase** (the per-run metadata record and run
-index) — `--json` today is a streaming summary you can pipe (`… --json | jq …`), not a stored
-artifact.
+The document is written to **stdout** alongside the human output — `--json` itself is a streaming
+summary you can pipe (`… --json | jq …`), not a stored artifact. For **durable, stable on-disk
+persistence**, every run also writes a [per-run metadata record](#per-run-metadata-record) per agent
+(below); a cross-run index over those records is added in [Run index](#run-index).
 
 ## Run metadata and history
 
@@ -344,6 +344,21 @@ durably to disk for *every* run. The post-fallback rule is decisive: for an agy 
 `model` is the **Gemini fallback actually used** and `fallback` is `true` (never the unconfirmed
 primary). Like the fan-out record, it is built **only** from values resolved at launch/collect time —
 **never parsed from the transcript** — so it carries no agent free-text and no prompt.
+
+**Where it lives.** The record is written to `<transcript-dir>/<agent>.meta.json` — the *same*
+per-project directory as that agent's transcript (default `~/.external-agents/logs/<project>`,
+overridable via [`--out`](#options) or the `EXTERNAL_AGENTS_OUT` base). One file per agent per run,
+overwritten on the next run that targets the same directory. Inspect or aggregate it with any JSON
+tool, e.g.:
+
+```bash
+jq . "${EXTERNAL_AGENTS_OUT:-$HOME/.external-agents/logs}"/<project>/codex.meta.json
+```
+
+**Secret-free by construction.** Because the record holds only the control-plane facts the driver
+resolved — never the transcript, never the prompt — no agent free-text, prompt text, or
+secret-shaped token can reach it (the transcript itself is separately [redacted](#safety)). So
+`*.meta.json` is safe to collect, ship, or index for run history.
 
 ## Safety
 
