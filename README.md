@@ -308,6 +308,11 @@ signal, all control-plane facts (no transcript content):
 
 The offline suite validates that the emitted document is well-formed and carries these required keys.
 
+The document is written to **stdout** alongside the human output. **Durable persistence and a stable
+on-disk location are intentionally deferred to a later phase** (the per-run metadata record and run
+index) — `--json` today is a streaming summary you can pipe (`… --json | jq …`), not a stored
+artifact.
+
 ## Safety
 
 For the full trust-boundary analysis and the per-CLI enforcement matrix, see
