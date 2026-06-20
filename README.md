@@ -477,6 +477,22 @@ The **retryable subset** is `transient` (always) and `timeout` (opt-in). A `safe
 canonical contract; the driver comment in `scripts/run-agent.sh` (above `run_one`) and the
 [threat model](docs/threat-model.md#error-classification-and-retry-safety) restate the same closed set.
 
+### Bounded retry
+
+Retryable failures can be re-attempted within **explicit bounds**, so a delegation never silently
+amplifies cost or data egress through uncontrolled re-runs. Retry is **opt-in and off by default**:
+
+| env var | default | effect |
+|---------|---------|--------|
+| `EXTERNAL_AGENTS_RETRY_MAX` | `0` | maximum retries of a **retryable** outcome (`transient`; `timeout` only if enabled below). `0` = never retry. |
+| `EXTERNAL_AGENTS_RETRY_BACKOFF` | `1` | seconds to wait before each retry. |
+| `EXTERNAL_AGENTS_RETRY_ON_TIMEOUT` | `0` | set to `1` to also retry a `timeout` outcome. |
+
+Only `transient` (and, when enabled, `timeout`) outcomes are retried — a `safety-refusal`, `auth`, or
+`contract` failure is **never** retried. Each run records two additive fields: `attempts` (total
+launch attempts = `1` + retries) and `retried` (`true` iff `attempts` > 1). With retry disabled
+(the default) every run records `attempts: 1`, `retried: false`.
+
 **Where it lives.** The record is written to `<transcript-dir>/<agent>.meta.json` — the *same*
 per-project directory as that agent's transcript (default `~/.external-agents/logs/<project>`,
 overridable via [`--out`](#options) or the `EXTERNAL_AGENTS_OUT` base). One file per agent per run,

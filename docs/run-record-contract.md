@@ -31,6 +31,8 @@ built only from values resolved at launch/collect — never parsed from the tran
 | `fallback` | boolean | `true` iff the agy quota fallback swapped the primary model |
 | `timestamp` | string | run launch time, UTC ISO-8601 (e.g. `2026-06-20T12:00:00Z`) |
 | `error_class` | string (enum) | the closed-set outcome class — one of `ok`, `safety-refusal`, `timeout`, `transient`, `auth`, `contract`, `unknown` (see README → [Error classification](../README.md#error-classification)). Added additively in Phase 8.2 |
+| `attempts` | number \| string | total launch attempts (`1` + retries). Added additively in Phase 8.2 |
+| `retried` | boolean | `true` iff the run was retried (`attempts` > 1). Added additively in Phase 8.2 |
 | `signals.tokens` | number \| string | a numeric token count, or the literal `unavailable` |
 | `signals.cost` | string | the cost string verbatim (e.g. `$0.12`), or the literal `unavailable` |
 

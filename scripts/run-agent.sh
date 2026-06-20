@@ -630,7 +630,7 @@ format_masked_argv() {
   printf '%s' "${line# }"
 }
 
-# write_meta_json FILE agent model tier effort mode target rc sec bytes fallback timestamp tokens cost error_class
+# write_meta_json FILE agent model tier effort mode target rc sec bytes fallback timestamp tokens cost error_class attempts retried
 # Emit the Phase 5.1 per-run metadata record as ONE JSON object (safe escaping via the same
 # jq/python3 backend the config reads through). It carries ONLY control-plane facts the driver
 # resolved at launch/collect — never transcript text — so it never leaks an agent's free-text or
@@ -656,6 +656,7 @@ print(json.dumps({
     "agent": a[0], "model": a[1], "tier": a[2], "effort": a[3], "mode": a[4],
     "target": a[5], "rc": num(a[6]), "sec": num(a[7]), "bytes": num(a[8]),
     "fallback": a[9] == "1", "timestamp": a[10], "error_class": a[13],
+    "attempts": num(a[14]), "retried": a[15] == "1",
     "signals": {"tokens": sig(a[11]), "cost": a[12]},
 }, separators=(",", ":")))
 PY
@@ -664,10 +665,11 @@ PY
       jq -nc \
         --arg agent "$1" --arg model "$2" --arg tier "$3" --arg effort "$4" --arg mode "$5" \
         --arg target "$6" --arg rc "$7" --arg sec "$8" --arg bytes "$9" --arg fb "${10}" --arg ts "${11}" \
-        --arg tok "${12}" --arg cost "${13}" --arg ec "${14}" \
+        --arg tok "${12}" --arg cost "${13}" --arg ec "${14}" --arg att "${15}" --arg rt "${16}" \
         '{agent:$agent, model:$model, tier:$tier, effort:$effort, mode:$mode, target:$target,
           rc:($rc|tonumber? // $rc), sec:($sec|tonumber? // $sec), bytes:($bytes|tonumber? // $bytes),
           fallback:($fb=="1"), timestamp:$ts, error_class:$ec,
+          attempts:($att|tonumber? // $att), retried:($rt=="1"),
           signals:{tokens:($tok|if test("^[0-9]+$") then tonumber else . end), cost:$cost}}' >"$file"
       ;;
   esac
@@ -769,6 +771,8 @@ classify_outcome() {
 
 run_one() {  # agent  (cwd=TARGET) — stdout->$OUT/<a>.md (redacted), stderr->.err, rc/.sec, .meta.json
   local a="$1" t0 t1 rc ts bytes reff tok cost ec
+  local rmax="${EXTERNAL_AGENTS_RETRY_MAX:-0}" rbackoff="${EXTERNAL_AGENTS_RETRY_BACKOFF:-1}"
+  local ron_to="${EXTERNAL_AGENTS_RETRY_ON_TIMEOUT:-0}" attempt=0 retried=0 retryable
   build_argv "$a" || return 1
   # Record the resolved launch argv with the prompt masked — identical to --dry-run — so a
   # live run's exact argv can be verified without ever persisting the prompt text.
@@ -778,11 +782,31 @@ run_one() {  # agent  (cwd=TARGET) — stdout->$OUT/<a>.md (redacted), stderr->.
   printf '%s' "$RESOLVED_MODEL"  >"$OUT/$a.model"
   printf '%s' "$FALLBACK_TAKEN"  >"$OUT/$a.fallback"
   t0=$(date +%s 2>/dev/null || echo 0)
-  ts="$(date -u +%Y-%m-%dT%H:%M:%SZ 2>/dev/null || echo unknown)"   # launch time, UTC ISO-8601
-  # Pipe stdout through redact so a secret-shaped token never persists to disk or echo;
-  # rc is the agent's (PIPESTATUS[0]), not redact's.
-  ( cd "$TARGET" && timeout "$TIMEOUT" "${ARGV[@]}" ) 2>"$OUT/$a.err" | redact >"$OUT/$a.md"
-  rc=${PIPESTATUS[0]}
+  ts="$(date -u +%Y-%m-%dT%H:%M:%SZ 2>/dev/null || echo unknown)"   # first-attempt launch time, UTC ISO-8601
+  # Phase 8.2 — bounded retry/backoff: re-run ONLY a retryable outcome (transient; timeout opt-in via
+  # EXTERNAL_AGENTS_RETRY_ON_TIMEOUT=1) up to EXTERNAL_AGENTS_RETRY_MAX times (default 0 = no retry),
+  # waiting EXTERNAL_AGENTS_RETRY_BACKOFF seconds between attempts. A safety-refusal cannot occur here
+  # (the gates refuse before launch) so it is never retried by construction. Each attempt overwrites
+  # the transcript; the LAST attempt's transcript/rc/class is the recorded outcome.
+  while : ; do
+    attempt=$((attempt + 1))
+    # Pipe stdout through redact so a secret-shaped token never persists to disk or echo;
+    # rc is the agent's (PIPESTATUS[0]), not redact's.
+    ( cd "$TARGET" && timeout "$TIMEOUT" "${ARGV[@]}" ) 2>"$OUT/$a.err" | redact >"$OUT/$a.md"
+    rc=${PIPESTATUS[0]}
+    ec="$(classify_outcome "" "$rc" "$OUT/$a.err")"
+    retryable=0
+    case "$ec" in
+      transient) retryable=1;;
+      timeout)   [ "$ron_to" = "1" ] && retryable=1;;
+    esac
+    if [ "$retryable" = "1" ] && [ "$attempt" -le "$rmax" ]; then
+      retried=1
+      if [ "$rbackoff" != "0" ]; then sleep "$rbackoff" 2>/dev/null || true; fi
+      continue
+    fi
+    break
+  done
   t1=$(date +%s 2>/dev/null || echo 0)
   echo "$rc" >"$OUT/$a.rc"; echo "$((t1 - t0))" >"$OUT/$a.sec"
   # Phase 5.1 — durable, structured per-run metadata record: one JSON object per agent next to its
@@ -794,11 +818,10 @@ run_one() {  # agent  (cwd=TARGET) — stdout->$OUT/<a>.md (redacted), stderr->.
   # Phase 5.3 — best-effort cost/latency signals from the (redacted) transcript; absent -> "unavailable".
   tok="$(extract_signal "$OUT/$a.md" "$a" tokens)";  [ -n "$tok" ]  || tok="unavailable"
   cost="$(extract_signal "$OUT/$a.md" "$a" cost)";   [ -n "$cost" ] || cost="unavailable"
-  # Classify the outcome ONCE (closed taxonomy above; no gate refusal here — the run launched) and
-  # record it as the additive error_class field. append_index_row inherits it via the record spread.
-  ec="$(classify_outcome "" "$rc" "$OUT/$a.err")"
+  # error_class was classified in the retry loop above (the last attempt's outcome). append_index_row
+  # inherits error_class/attempts/retried via the record spread. attempts/retried are additive fields.
   write_meta_json "$OUT/$a.meta.json" "$a" "${RESOLVED_MODEL:-(cli default)}" "${TIER:-(none)}" \
-    "${reff:-(none)}" "$MODE" "$TARGET" "$rc" "$((t1 - t0))" "$bytes" "$FALLBACK_TAKEN" "$ts" "$tok" "$cost" "$ec"
+    "${reff:-(none)}" "$MODE" "$TARGET" "$rc" "$((t1 - t0))" "$bytes" "$FALLBACK_TAKEN" "$ts" "$tok" "$cost" "$ec" "$attempt" "$retried"
 }
 
 # --- dry-run: print resolved argv and exit ----------------------------------------
