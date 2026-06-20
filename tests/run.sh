@@ -1180,6 +1180,32 @@ else
   bad "docs/e2e-recipe.md documents the offline stub-driven oracle coverage" "doc drifted: missing the stub-driven offline oracle note"
 fi
 
+echo "== ci.yml required-job offline boundary (no live harness in the required gate) =="
+# P0-01: the required CI check job is offline-by-design — it must NEVER invoke the opt-in live harness
+# (tests/live-smoke.sh), the e2e recipes (tests/e2e/, run-e2e.sh), or arm EXTERNAL_AGENTS_LIVE, which
+# would spend real quota and ship the tree to third-party providers on every push/PR. The in-file
+# boundary warning names the harness on purpose, so parse only ACTIVE (non-comment) lines. Any live
+# verification must live in a SEPARATE, non-required workflow file — never folded into this gate.
+ci_yml="$ROOT/.github/workflows/ci.yml"
+if [ -f "$ci_yml" ]; then
+  ci_active="$(grep -vE '^[[:space:]]*#' "$ci_yml")"
+  if printf '%s\n' "$ci_active" | grep -qE 'live-smoke\.sh|run-e2e\.sh|tests/e2e/|EXTERNAL_AGENTS_LIVE'; then
+    bad "ci-boundary: required job has no live-harness reference" \
+        "ci.yml active lines reference a live harness / arming switch: $(printf '%s\n' "$ci_active" | grep -nE 'live-smoke\.sh|run-e2e\.sh|tests/e2e/|EXTERNAL_AGENTS_LIVE' | paste -sd';' -)"
+  else
+    ok "ci-boundary: required job has no live-harness reference"
+  fi
+  # Positive check: ci.yml IS the offline gate (it runs the CLI-free suite), so a live workflow is a
+  # distinct file rather than a step folded into this required job.
+  if printf '%s\n' "$ci_active" | grep -qF 'tests/run.sh'; then
+    ok "ci-boundary: required job runs the offline suite (tests/run.sh)"
+  else
+    bad "ci-boundary: required job runs the offline suite (tests/run.sh)" "ci.yml no longer runs the offline suite"
+  fi
+else
+  bad "ci-boundary: .github/workflows/ci.yml present" "missing .github/workflows/ci.yml"
+fi
+
 echo "== shellcheck (regression guard) =="
 if command -v shellcheck >/dev/null 2>&1; then
   # Lint the driver scripts AND the test harness itself — the harness is the largest body of
