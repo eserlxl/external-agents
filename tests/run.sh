@@ -790,6 +790,49 @@ else
   skip "recoverability + rotation oracle (python3 unavailable)"
 fi
 
+echo "== Phase 8 resilience field parity + schema (error_class/attempts/retried; both backends) =="
+# Consolidation: the Phase 8.2 resilience fields must be PRESENT, correctly TYPED, parity-identical
+# across jq/python3, AND schema-valid. The emitter-parity block compares the whole record, but a field
+# dropped from BOTH backends would still compare equal there — so assert these fields explicitly.
+if command -v timeout >/dev/null 2>&1 && command -v python3 >/dev/null 2>&1 && command -v jq >/dev/null 2>&1; then
+  p8stub="$(mktemp -d)"
+  printf '#!/usr/bin/env bash\necho "resp"\n' >"$p8stub/codex"; chmod +x "$p8stub/codex"
+  p8restr="$(mktemp -d)"; mk_restricted_bin "$p8restr"   # python3, NO jq -> forces the python3 backend
+  p8_fields() {  # bashbin pathprefix -> "<error_class> <attempts> <retried> <types> <schema>"
+    local bb="$1" pp="$2" tg od
+    tg="$(mktemp -d)"; od="$(mktemp -d)"
+    PATH="$p8stub:$pp" EXTERNAL_AGENTS_OUT="$od" "$bb" "$RUN" --agent codex --effort high --read-only --target "$tg" --prompt x >/dev/null 2>&1
+    P8_SCHEMA="$ROOT/schema/run-record.schema.json" python3 -c '
+import json, os, sys
+d = json.load(open(sys.argv[1]))
+ec = d.get("error_class"); at = d.get("attempts"); rt = d.get("retried")
+types = isinstance(ec, str) and isinstance(at, int) and isinstance(rt, bool)
+sok = "schema-skip"
+try:
+    from jsonschema import Draft7Validator
+    v = Draft7Validator(json.load(open(os.environ["P8_SCHEMA"])))
+    sok = "schema-ok" if not list(v.iter_errors(d)) else "schema-bad"
+except ImportError:
+    pass
+print(ec, at, rt, "types-ok" if types else "types-bad", sok)
+' "$od/$(basename "$tg")/codex.meta.json" 2>/dev/null
+    rm -rf "$tg" "$od"
+  }
+  if python3 -c 'import jsonschema' >/dev/null 2>&1; then p8exp="ok 1 False types-ok schema-ok"; else p8exp="ok 1 False types-ok schema-skip"; fi
+  p8jq="$(p8_fields "bash" "$PATH")"
+  p8py="$(p8_fields "$p8restr/bin/bash" "$p8restr/bin")"
+  rm -rf "$p8stub" "$p8restr"
+  assert_contains "phase8 parity: jq backend resilience fields present, typed, schema-valid"     "$p8jq" "$p8exp"
+  assert_contains "phase8 parity: python3 backend resilience fields present, typed, schema-valid" "$p8py" "$p8exp"
+  if [ "$p8jq" = "$p8py" ]; then
+    ok "phase8 parity: resilience fields identical across jq/python3"
+  else
+    bad "phase8 parity: resilience fields identical across jq/python3" "jq=[$p8jq] py=[$p8py]"
+  fi
+else
+  skip "Phase 8 resilience field parity (jq/python3/timeout unavailable)"
+fi
+
 echo "== transcript secret-redaction (stub agent, real redact path) =="
 # run_stub_transcript TEXT FILEVAR -> stdout = the driver's echoed (redacted) transcript;
 # the persisted (redacted) transcript file content is written to the path FILEVAR (a disk
