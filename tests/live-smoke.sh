@@ -58,6 +58,15 @@ make_sandbox() {
   printf '%s' "$sb"
 }
 
+# tree_changes SANDBOX — print the paths that changed in the git-backed SANDBOX since its
+# seed commit, one porcelain line per path; EMPTY output means byte-identical (no mutation).
+# The seed commit is the implicit "before" snapshot and `git status --porcelain` is the
+# "after" compare, mirroring the driver's own post-write verification (scripts/run-agent.sh).
+# Untracked additions appear too (as '?? path'), so an agent that *adds* a file is detected.
+tree_changes() {  # sandbox
+  git -C "$1" status --porcelain 2>/dev/null
+}
+
 # argv_equiv AGENT MODE SRC — prove the LIVE launch argv matches what --dry-run shows for
 # ONE (mode, prompt-source) pair, so every build_argv resolution path is covered:
 #   MODE = read-only | read-write   (--read-only enforced argv vs --write argv)

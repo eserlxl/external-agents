@@ -427,6 +427,22 @@ else
   bad "make_sandbox produced a sandbox" "no path returned"
 fi
 
+echo "== live-smoke non-mutation snapshot (detects a change, clean when none) =="
+# tree_changes diffs a git-backed sandbox against its seed commit. It must report clean for
+# an untouched sandbox and name the changed path after a deliberately injected edit/addition.
+# (make_sandbox/tree_changes were sourced from the harness in the block above.)
+sb2="$(make_sandbox)"
+if [ -n "$sb2" ] && [ -d "$sb2" ]; then
+  if [ -z "$(tree_changes "$sb2")" ]; then ok "snapshot reports clean for an untouched sandbox"; else bad "snapshot reports clean for an untouched sandbox" "unexpected changes"; fi
+  printf 'injected\n' >>"$sb2/sample.py"                      # deliberate edit of a tracked file
+  case "$(tree_changes "$sb2")" in *sample.py*) ok "snapshot detects a tracked-file edit";; *) bad "snapshot detects a tracked-file edit" "edit not reported";; esac
+  printf 'new\n' >"$sb2/INJECTED.txt"                          # deliberate untracked addition
+  case "$(tree_changes "$sb2")" in *INJECTED.txt*) ok "snapshot detects an added file";; *) bad "snapshot detects an added file" "addition not reported";; esac
+  rm -rf "$sb2"
+else
+  bad "make_sandbox produced a sandbox for the snapshot test" "no path returned"
+fi
+
 echo "== bump-version.sh lockstep write (mktemp fixture, real repo untouched) =="
 ft="$(mktemp -d)"
 mkdir -p "$ft/scripts" "$ft/.claude-plugin" "$ft/skills/external-agents"
