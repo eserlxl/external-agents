@@ -283,6 +283,12 @@ The summary closes with a deterministic **agreement** line derived from the succ
 For a **read-only** fan-out on a git target it also adds a **no-mutation** line stating whether all
 agents left the shared tree unchanged (every read-only mode should — agy is best-effort).
 
+These agreement signals are **deterministic and outcome-based** — they come from the per-agent
+exit-code tally and the target tree's git state, never from interpreting the agents' answers.
+**Semantic content agreement** (do the agents actually agree on *what they said*?) is **not provided**:
+that needs a human-confirmed cross-agent summary schema and live-run evidence, so it is deliberately
+deferred. Read the verbatim transcripts to compare the agents' actual content.
+
 ## Safety
 
 For the full trust-boundary analysis and the per-CLI enforcement matrix, see
