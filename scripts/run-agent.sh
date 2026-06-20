@@ -964,6 +964,9 @@ fi
 # byte-for-byte unchanged when --json is absent). One object per agent built from the Phase 4.1
 # RECORDS (control-plane facts only — NO transcript content), plus the agreement signal and an
 # outcome count. Built with python3/jq for safe escaping; records are fed in tab-delimited.
+# Phase 9.5: the consensus verdict is surfaced in --json ONLY under --consensus (empty = field omitted,
+# so the doc is byte-for-byte unchanged without the flag). Computed once; passed to both emitters.
+CONS_JSON=""; [ "$CONSENSUS" = "1" ] && CONS_JSON="$CONSENSUS_VERDICT"
 if [ "$JSON" = "1" ]; then
   if   command -v python3 >/dev/null 2>&1; then
     printf '%s\n' ${RECORDS[@]+"${RECORDS[@]}"} | python3 -c '
@@ -976,15 +979,19 @@ for line in sys.stdin:
     f = (line.split("\t") + [""] * 9)[:9]
     agents.append({"agent": f[0], "model": f[1], "tier": f[2], "effort": f[3], "mode": f[4],
                    "rc": num(f[5]), "sec": num(f[6]), "bytes": num(f[7]), "fallback": f[8] == "1"})
-print(json.dumps({"mode": sys.argv[1], "tier": sys.argv[2], "ok": int(sys.argv[3]),
-                  "fail": int(sys.argv[4]), "count": len(agents), "agreement": sys.argv[5],
-                  "agents": agents}))
-' "$MODE" "${TIER:-}" "$ok" "$fail" "$AGREEMENT"
+out = {"mode": sys.argv[1], "tier": sys.argv[2], "ok": int(sys.argv[3]),
+       "fail": int(sys.argv[4]), "count": len(agents), "agreement": sys.argv[5]}
+if sys.argv[6]:                 # additive: present only under --consensus
+    out["consensus"] = sys.argv[6]
+out["agents"] = agents
+print(json.dumps(out))
+' "$MODE" "${TIER:-}" "$ok" "$fail" "$AGREEMENT" "$CONS_JSON"
   elif command -v jq >/dev/null 2>&1; then
     printf '%s\n' ${RECORDS[@]+"${RECORDS[@]}"} \
       | jq -R 'split("\t") | {agent:.[0], model:.[1], tier:.[2], effort:.[3], mode:.[4], rc:(.[5]|tonumber? // .[5]), sec:(.[6]|tonumber? // .[6]), bytes:(.[7]|tonumber? // .[7]), fallback:(.[8]=="1")}' \
-      | jq -s --arg mode "$MODE" --arg tier "${TIER:-}" --argjson ok "$ok" --argjson fail "$fail" --arg agreement "$AGREEMENT" \
-          '{mode:$mode, tier:$tier, ok:$ok, fail:$fail, count:length, agreement:$agreement, agents:.}'
+      | jq -s --arg mode "$MODE" --arg tier "${TIER:-}" --argjson ok "$ok" --argjson fail "$fail" --arg agreement "$AGREEMENT" --arg cons "$CONS_JSON" \
+          'if $cons == "" then {mode:$mode, tier:$tier, ok:$ok, fail:$fail, count:length, agreement:$agreement, agents:.}
+           else {mode:$mode, tier:$tier, ok:$ok, fail:$fail, count:length, agreement:$agreement, consensus:$cons, agents:.} end'
   fi
 fi
 # Append one run-index row per agent (Phase 5.2) from its per-run metadata record — a durable,

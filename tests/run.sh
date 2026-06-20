@@ -438,6 +438,50 @@ else
   skip "stub-driven consensus oracle (timeout/python3 unavailable)"
 fi
 
+echo "== --json consensus field: additive + byte-identical across config backends (Phase 9.5) =="
+# The consensus verdict is an ADDITIVE --json field: present only under --consensus (the doc is
+# byte-for-byte unchanged without it, per-agent rows unchanged), byte-identical across config backends,
+# and emitted by the jq fallback branch too.
+if command -v jq >/dev/null 2>&1 && command -v timeout >/dev/null 2>&1 && command -v python3 >/dev/null 2>&1; then
+  cjstub="$(mktemp -d)"
+  for cjb in agy codex cursor-agent; do printf '#!/usr/bin/env bash\necho resp\n' >"$cjstub/$cjb"; chmod +x "$cjstub/$cjb"; done
+  cjrb="$(mktemp -d)"; mk_restricted_bin "$cjrb"   # python3, NO jq -> py config backend (--json emitter still python3)
+  cj_doc() {  # bashbin pathprefix consensus(0|1) -> the --json doc (last line)
+    local bb="$1" pp="$2" cflag="$3" tg od extra=()
+    [ "$cflag" = "1" ] && extra=(--consensus)
+    tg="$(mktemp -d)"; od="$(mktemp -d)"
+    EXTERNAL_AGENTS_AGY_QUOTA_CMD=false PATH="$cjstub:$pp" EXTERNAL_AGENTS_OUT="$od" \
+      "$bb" "$RUN" --agent all --effort high --read-only --json ${extra[@]+"${extra[@]}"} --target "$tg" --prompt x 2>/dev/null | tail -1
+    rm -rf "$tg" "$od"
+  }
+  cj_a="$(cj_doc "bash" "$PATH" 1)"
+  cj_b="$(cj_doc "$cjrb/bin/bash" "$cjrb/bin" 1)"
+  if [ -n "$cj_a" ] && [ "$cj_a" = "$cj_b" ]; then
+    ok "--json consensus: byte-identical across config backends (with --consensus)"
+  else
+    bad "--json consensus: byte-identical across config backends (with --consensus)" "a=[$cj_a] b=[$cj_b]"
+  fi
+  case "$cj_a" in *'"consensus":'*) ok "--json consensus: field present with --consensus";; *) bad "--json consensus: field present with --consensus" "no consensus field in --json";; esac
+  cj_plain="$(cj_doc "bash" "$PATH" 0)"
+  case "$cj_plain" in *'"consensus":'*) bad "--json consensus: field ABSENT without --consensus (additive)" "consensus field leaked without the flag";; *) ok "--json consensus: field ABSENT without --consensus (additive)";; esac
+  ag_with="$(printf '%s' "$cj_a" | python3 -c 'import json,sys; print(json.dumps(json.load(sys.stdin)["agents"]))' 2>/dev/null)"
+  ag_without="$(printf '%s' "$cj_plain" | python3 -c 'import json,sys; print(json.dumps(json.load(sys.stdin)["agents"]))' 2>/dev/null)"
+  if [ -n "$ag_with" ] && [ "$ag_with" = "$ag_without" ]; then
+    ok "--json consensus: per-agent row shape unchanged by the flag"
+  else
+    bad "--json consensus: per-agent row shape unchanged by the flag" "agents[] differ"
+  fi
+  # jq --json fallback branch (python3 ABSENT, jq present) must also emit the field.
+  jqonly="$(mktemp -d)"; mkdir -p "$jqonly/bin"
+  for cjt in bash env jq grep dirname basename cat sed sort tr cut wc paste date mktemp git head tail mkdir rm timeout; do cjs="$(command -v "$cjt" 2>/dev/null)" && ln -s "$cjs" "$jqonly/bin/$cjt"; done
+  tgj="$(mktemp -d)"; odj="$(mktemp -d)"
+  jqjson="$(EXTERNAL_AGENTS_AGY_QUOTA_CMD=false PATH="$cjstub:$jqonly/bin" "$jqonly/bin/bash" "$RUN" --agent all --effort high --read-only --json --consensus --target "$tgj" --prompt x 2>/dev/null)"
+  rm -rf "$jqonly" "$tgj" "$odj" "$cjstub" "$cjrb"
+  case "$jqjson" in *'"consensus"'*) ok "--json consensus: jq emitter fallback branch includes the field";; *) bad "--json consensus: jq emitter fallback branch includes the field" "jq --json branch missing consensus";; esac
+else
+  skip "--json consensus parity (jq/python3/timeout unavailable)"
+fi
+
 echo "== agents.json schema validation (draft-07 contract) =="
 if python3 -c 'import jsonschema' 2>/dev/null; then
   # schema_check FILE -> "OK" if FILE validates against schema/agents.schema.json, else "REJECTED".
