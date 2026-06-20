@@ -67,6 +67,22 @@ whether each agent CLI is on `PATH`:
 bash scripts/run-agent.sh --check
 ```
 
+`--check` prints one line per check and a final tally:
+
+- `ok   <name> <path>` — the JSON reader (`jq`/`python3`) or an agent CLI is present on `PATH`.
+- `MISS <name> …` — a required piece is missing (an agent CLI not installed, or the `cursor-agent`
+  binary the `cursor` agent needs).
+- `info agy-qta …` — optional only: whether `antigravity-usage` (agy's quota-fallback helper) is on
+  `PATH`; this is never counted as missing.
+
+It ends with `external-agents: <N> missing` and **exits non-zero when `N > 0`**. A clean install of the
+agents you intend to use therefore reports **`0 missing` and exits `0`** — that is the pass criterion.
+Scope the check to a single agent with `--agent <name>` if you don't use all four:
+
+```bash
+bash scripts/run-agent.sh --agent codex --check && echo "codex ready"
+```
+
 ## Usage
 
 Natural language (skill):
