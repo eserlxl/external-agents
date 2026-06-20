@@ -735,15 +735,30 @@ if [ "$MODE" = "write" ] && [ -n "$TOP" ]; then
   echo
 fi
 # Opt-in JSON run summary (--json) — emitted in ADDITION to the default output above (which stays
-# byte-for-byte unchanged when --json is absent). Run-level fields here; the per-agent objects are
-# added by the next sub-phase. Built with python3/jq for safe escaping.
+# byte-for-byte unchanged when --json is absent). One object per agent built from the Phase 4.1
+# RECORDS (control-plane facts only — NO transcript content), plus the agreement signal and an
+# outcome count. Built with python3/jq for safe escaping; records are fed in tab-delimited.
 if [ "$JSON" = "1" ]; then
   if   command -v python3 >/dev/null 2>&1; then
-    python3 -c 'import json,sys; print(json.dumps({"mode":sys.argv[1],"tier":sys.argv[2],"ok":int(sys.argv[3]),"fail":int(sys.argv[4]),"agreement":sys.argv[5]}))' \
-      "$MODE" "${TIER:-}" "$ok" "$fail" "$AGREEMENT"
+    printf '%s\n' ${RECORDS[@]+"${RECORDS[@]}"} | python3 -c '
+import json, sys
+def num(x): return int(x) if x.lstrip("-").isdigit() else x
+agents = []
+for line in sys.stdin:
+    line = line.rstrip("\n")
+    if not line: continue
+    f = (line.split("\t") + [""] * 9)[:9]
+    agents.append({"agent": f[0], "model": f[1], "tier": f[2], "effort": f[3], "mode": f[4],
+                   "rc": num(f[5]), "sec": num(f[6]), "bytes": num(f[7]), "fallback": f[8] == "1"})
+print(json.dumps({"mode": sys.argv[1], "tier": sys.argv[2], "ok": int(sys.argv[3]),
+                  "fail": int(sys.argv[4]), "count": len(agents), "agreement": sys.argv[5],
+                  "agents": agents}))
+' "$MODE" "${TIER:-}" "$ok" "$fail" "$AGREEMENT"
   elif command -v jq >/dev/null 2>&1; then
-    jq -n --arg mode "$MODE" --arg tier "${TIER:-}" --argjson ok "$ok" --argjson fail "$fail" --arg agreement "$AGREEMENT" \
-      '{mode:$mode,tier:$tier,ok:$ok,fail:$fail,agreement:$agreement}'
+    printf '%s\n' ${RECORDS[@]+"${RECORDS[@]}"} \
+      | jq -R 'split("\t") | {agent:.[0], model:.[1], tier:.[2], effort:.[3], mode:.[4], rc:(.[5]|tonumber? // .[5]), sec:(.[6]|tonumber? // .[6]), bytes:(.[7]|tonumber? // .[7]), fallback:(.[8]=="1")}' \
+      | jq -s --arg mode "$MODE" --arg tier "${TIER:-}" --argjson ok "$ok" --argjson fail "$fail" --arg agreement "$AGREEMENT" \
+          '{mode:$mode, tier:$tier, ok:$ok, fail:$fail, count:length, agreement:$agreement, agents:.}'
   fi
 fi
 echo "external-agents: $ok ok, $fail failed  (transcripts in $OUT)" >&2
