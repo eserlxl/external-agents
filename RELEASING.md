@@ -93,7 +93,12 @@ a GitHub release from the pushed tag if you publish one.
 The lockstep contract ties `.claude-plugin/plugin.json`'s version to the skill frontmatter, the
 README badge, and the latest `CHANGELOG.md` header. The **one** version surface that lives outside the
 bumper — the git tag — must also match, or the release is mis-tagged. After tagging (step 6) and
-**before** pushing the tag (step 7), confirm the annotated tag name equals `v<version>`:
+**before** pushing the tag (step 7), confirm the annotated tag name equals `v<version>`.
+
+The snippet below is the **single source** of this check: the offline tag-gate oracle in
+[`tests/run.sh`](tests/run.sh) extracts it and proves its match, mismatch, and no-tag (`<none>`)
+behaviour against a throwaway repo on every `bash tests/run.sh` run, so the documented check cannot
+silently drift from its tested contract. Run it during a release:
 
 ```bash
 ver="$(python3 -c "import json; print(json.load(open('.claude-plugin/plugin.json'))['version'])")"

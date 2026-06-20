@@ -696,7 +696,11 @@ external-agents/
 Cutting a release is a documented, repeatable procedure: run the lockstep
 [`scripts/bump-version.sh`](scripts/bump-version.sh), then create and push the matching annotated
 tag (the step the bumper deliberately leaves out). The full flow — clean tree, dry-run preview, real
-bump, diff review, commit, `vX.Y.Z` tag, push — is in [RELEASING.md](RELEASING.md).
+bump, diff review, commit, `vX.Y.Z` tag, push — is in [RELEASING.md](RELEASING.md). The
+`tag == v<version>` contract from that runbook is the single source: it is regression-pinned by the
+offline tag-gate oracle in [`tests/run.sh`](tests/run.sh) (run `bash tests/run.sh`), which exercises
+the match, mismatch, and no-tag cases against a throwaway repo, so the documented check cannot
+silently drift.
 
 ## Contributing
 
