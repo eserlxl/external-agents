@@ -249,6 +249,13 @@ transcript**:
 | `bytes` | redacted transcript size |
 | `fallback` | `1` iff the agy quota fallback swapped the primary model |
 
+**Contract.** Every field is a **resolved fact**, never inferred from the transcript text: `model` and
+`fallback` come from what the driver actually resolved at launch (`run_one`'s `.model`/`.fallback`
+sidecars), `tier`/`effort`/`mode` from the config and run mode, and `rc`/`sec`/`bytes` from the run
+files. So `fallback=1` means the agy quota fallback *actually swapped* the primary (not merely that
+quota was checked), and the record never depends on parsing an agent's free-text output. The record
+is the single source the cross-agent summary and the opt-in JSON output (below) both render from.
+
 ## Safety
 
 For the full trust-boundary analysis and the per-CLI enforcement matrix, see
