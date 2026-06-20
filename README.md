@@ -616,6 +616,14 @@ and, crucially, what it does **not**:
 The honest boundary: a green offline `tests/run.sh` proves the plumbing; only a `live-verified` line
 proves a *real* agent round-tripped — and only as of when that line was written, never "always works".
 
+**Record stability (decision).** `status.txt` and `provenance.txt` are **best-effort, human-auditable
+evidence — not a version-stable machine contract.** The `<agent>  <status>` line shape and the
+provenance `key: value` lines are intended to stay stable, and the status vocabulary grows only
+**additively** (a consumer should treat an unrecognized token leniently rather than fail), but the
+record carries **no formal backward-compatibility guarantee** and is *not* version-gated. For machine
+consumption prefer the driver's structured per-run records (`<agent>.meta.json` / `index.jsonl`); this
+file exists to audit which agents were live-verified, not as a parsed API.
+
 That transcript dir is **outside the repository** — raw transcripts (which can carry free-text or
 PII) are **never committed**; only the offline, content-free tests live in the repo.
 

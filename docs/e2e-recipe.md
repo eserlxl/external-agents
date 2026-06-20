@@ -169,7 +169,8 @@ The sibling live-smoke harness records a per-agent `status.txt` whose tokens —
 `failed`, and the `skipped-*` family — are defined in the
 [README status vocabulary](../README.md#live-smoke-opt-in). The same honesty boundary applies to
 these recipes: `live-verified` means a *real* agent round-tripped **at record time**, not that it
-always will, and a green offline gate never implies a green live run.
+always will, and a green offline gate never implies a green live run. That record is **best-effort
+audit evidence, not a version-stable machine contract** (see the README's *Record stability* decision).
 
 ## Per-agent reproducibility checklist
 
