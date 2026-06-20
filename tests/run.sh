@@ -725,6 +725,71 @@ else
   skip "run-history analytics trends oracle (python3 unavailable)"
 fi
 
+echo "== run-history recoverability + rotation oracle (backup/restore content-identity; offline) =="
+# Drill the RUNBOOK.md backup/restore + rotation procedures over a committed fixture in a DISPOSABLE
+# base (under mktemp, never the repo): back up -> corrupt -> restore -> assert content-identical (+
+# schema conformance); then rotate and assert the archive holds the rows and the fresh index keeps
+# appending. No row loss; all writes stay under the temp base.
+if command -v python3 >/dev/null 2>&1; then
+  RFIX="$ROOT/tests/fixtures/recoverability-index.jsonl"
+  rbase="$(mktemp -d)"; mkdir -p "$rbase/archive"
+  cp "$RFIX" "$rbase/index.jsonl"
+  rorig="$(cksum "$rbase/index.jsonl")"
+  cp -p "$rbase/index.jsonl" "$rbase/archive/index-backup.jsonl"   # backup (RUNBOOK: cp)
+  printf 'CORRUPTED GARBAGE\n' >"$rbase/index.jsonl"               # corrupt
+  cp -p "$rbase/archive/index-backup.jsonl" "$rbase/index.jsonl"   # restore (RUNBOOK: cp back, byte-for-byte)
+  if [ "$rorig" = "$(cksum "$rbase/index.jsonl")" ]; then
+    ok "recover: restored index is content-identical to the original (checksum)"
+  else
+    bad "recover: restored index is content-identical to the original (checksum)" "checksum differs"
+  fi
+  if cmp -s "$RFIX" "$rbase/index.jsonl"; then
+    ok "recover: restored index byte-matches the committed fixture"
+  else
+    bad "recover: restored index byte-matches the committed fixture" "cmp differs"
+  fi
+  if python3 -c 'import jsonschema' >/dev/null 2>&1; then
+    rconf="$(SC_SCHEMA="$ROOT/schema/run-record.schema.json" python3 -c '
+import json, os, sys
+from jsonschema import Draft7Validator
+v = Draft7Validator(json.load(open(os.environ["SC_SCHEMA"])))
+bad = 0
+for ln in open(sys.argv[1]):
+    ln = ln.strip()
+    if not ln:
+        continue
+    if list(v.iter_errors(json.loads(ln))):
+        bad += 1
+print("OK" if bad == 0 else "FAIL %d" % bad)' "$rbase/index.jsonl" 2>/dev/null)"
+    assert_contains "recover: restored rows conform to the run-record schema" "$rconf" "OK"
+  else
+    skip "recover: schema conformance (jsonschema unavailable)"
+  fi
+  # Rotation case: force-rotate, the archive holds all rows, the fresh index keeps appending.
+  rbefore="$(wc -l <"$rbase/index.jsonl" | tr -d ' ')"
+  EXTERNAL_AGENTS_OUT="$rbase" bash "$ROOT/scripts/run-history-maintain.sh" --force >/dev/null 2>&1
+  rarc="$(find "$rbase/archive" -name 'index-2*.jsonl' 2>/dev/null | sort -r | head -1)"
+  rarc_rows="$(wc -l <"$rarc" 2>/dev/null | tr -d ' ')"
+  if [ -n "$rbefore" ] && [ "$rarc_rows" = "$rbefore" ]; then
+    ok "rotation: archive holds all rotated rows (no loss, $rarc_rows rows)"
+  else
+    bad "rotation: archive holds all rotated rows (no loss)" "archive=$rarc_rows before=$rbefore"
+  fi
+  printf '{"appended":1}\n' >>"$rbase/index.jsonl"
+  if [ "$(wc -l <"$rbase/index.jsonl" | tr -d ' ')" = "1" ]; then
+    ok "rotation: fresh index keeps appending after rotation"
+  else
+    bad "rotation: fresh index keeps appending after rotation" "unexpected row count"
+  fi
+  case "$rbase/" in
+    "$ROOT/"*) bad "rotation: writes stay outside the repo" "temp base is inside the repo";;
+    *)         ok "rotation: writes stay outside the repo";;
+  esac
+  rm -rf "$rbase"
+else
+  skip "recoverability + rotation oracle (python3 unavailable)"
+fi
+
 echo "== transcript secret-redaction (stub agent, real redact path) =="
 # run_stub_transcript TEXT FILEVAR -> stdout = the driver's echoed (redacted) transcript;
 # the persisted (redacted) transcript file content is written to the path FILEVAR (a disk
