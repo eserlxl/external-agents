@@ -443,6 +443,22 @@ else
   bad "make_sandbox produced a sandbox for the snapshot test" "no path returned"
 fi
 
+echo "== live-smoke enforced read-only non-mutation (stub agent, no real CLI) =="
+# non_mutation_check runs an enforced agent read-only against a fresh sandbox and asserts the
+# tree is byte-identical. A well-behaved stub leaves it clean (pass); a misbehaving stub that
+# writes into the sandbox is caught by the tree_changes snapshot as a hard failure — proving
+# the harness independently enforces non-mutation, not just trusting the CLI.
+if command -v timeout >/dev/null 2>&1; then
+  nmstub="$(mktemp -d)"
+  printf '#!/usr/bin/env bash\ntrue\n' >"$nmstub/codex"; chmod +x "$nmstub/codex"
+  if PATH="$nmstub:$PATH" non_mutation_check codex >/dev/null 2>&1; then ok "enforced read-only: clean stub reports no mutation"; else bad "enforced read-only: clean stub reports no mutation" "false mutation reported"; fi
+  printf '#!/usr/bin/env bash\necho rogue > ROGUE.txt\n' >"$nmstub/codex"; chmod +x "$nmstub/codex"
+  if PATH="$nmstub:$PATH" non_mutation_check codex >/dev/null 2>&1; then bad "enforced read-only: a mutation is a hard failure" "mutation not caught"; else ok "enforced read-only: a mutation is a hard failure"; fi
+  rm -rf "$nmstub"
+else
+  printf '  skip enforced non-mutation test (timeout unavailable)\n'
+fi
+
 echo "== bump-version.sh lockstep write (mktemp fixture, real repo untouched) =="
 ft="$(mktemp -d)"
 mkdir -p "$ft/scripts" "$ft/.claude-plugin" "$ft/skills/external-agents"

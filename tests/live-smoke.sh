@@ -67,6 +67,34 @@ tree_changes() {  # sandbox
   git -C "$1" status --porcelain 2>/dev/null
 }
 
+# enforced_readonly AGENT — true when AGENT's read-only mode is HARD-enforced by the CLI
+# (codex -s read-only / claude --allowedTools / cursor --mode plan). agy read-only is only
+# best-effort (--sandbox), so it is reported separately, never asserted (next sub-phase).
+enforced_readonly() {  # agent
+  case "$1" in codex|claude|cursor) return 0;; *) return 1;; esac
+}
+
+# non_mutation_check AGENT — run AGENT read-only against a fresh disposable sandbox and
+# assert the tree is byte-identical afterward. For an ENFORCED agent any change is a HARD
+# failure (returns 1). The tree_changes snapshot catches the mutation regardless of whether
+# the CLI's own enforcement held, so this independently proves the read-only guarantee.
+non_mutation_check() {  # agent
+  local a="$1" sb out changes
+  sb="$(make_sandbox)" || { echo "live smoke: $a  FAIL: could not create sandbox" >&2; return 1; }
+  out="$(mktemp -d)"
+  EXTERNAL_AGENTS_OUT="$out" "$RUN" --agent "$a" --read-only --target "$sb" \
+    --timeout "$SMOKE_TIMEOUT" --prompt "$SMOKE_PROMPT" >/dev/null 2>&1
+  changes="$(tree_changes "$sb")"
+  rm -rf "$sb" "$out"
+  if [ -z "$changes" ]; then
+    echo "live smoke: $a [read-only]  no mutation (tree byte-identical)"
+    return 0
+  fi
+  echo "live smoke: $a [read-only]  FAIL: enforced read-only mutated the tree:" >&2
+  printf '%s\n' "$changes" >&2
+  return 1
+}
+
 # argv_equiv AGENT MODE SRC — prove the LIVE launch argv matches what --dry-run shows for
 # ONE (mode, prompt-source) pair, so every build_argv resolution path is covered:
 #   MODE = read-only | read-write   (--read-only enforced argv vs --write argv)
@@ -119,14 +147,18 @@ main() {
   [ -x "$RUN" ] || { echo "live smoke: driver not found at $RUN" >&2; return 1; }
   echo "external-agents live smoke: armed (EXTERNAL_AGENTS_LIVE=1)"
 
-  # Optional --agent <name> selector scopes the smoke to one agent (default: every reachable).
-  local WANT_AGENT=""
+  # Optional flags: --agent <name> scopes to one agent (default: every reachable agent);
+  # --read-only narrows the argv matrix to read-only cases (non-mutation always runs).
+  local WANT_AGENT="" RO_ONLY=0
   while [ $# -gt 0 ]; do
     case "$1" in
       --agent) WANT_AGENT="${2:-}"; shift 2;;
+      --read-only) RO_ONLY=1; shift;;
       *) echo "live smoke: unknown arg: $1" >&2; return 2;;
     esac
   done
+  local argv_modes=(read-only read-write)
+  [ "$RO_ONLY" = "1" ] && argv_modes=(read-only)
 
   # Scope the harness to reachable agents and skip the rest with a clear per-agent line.
   # Discovery is the driver's machine-readable --discover surface (same agent_bin /
@@ -162,22 +194,26 @@ EOF
   fi
   echo "live smoke: verifying ${verify[*]}"
 
-  # Per-agent live checks. Phase 2.2 verifies argv equivalence across every (mode,
-  # prompt-source) build_argv path; non-mutation and transcript-success checks are added
-  # by the later Phase 2 sub-phases.
+  # Per-agent live checks: (1) argv equivalence across every (mode, prompt-source)
+  # build_argv path, and (2) read-only non-mutation — enforced agents (codex/claude/cursor)
+  # must leave the tree byte-identical; any change is a hard failure. (agy read-only is
+  # best-effort and reported separately by the next sub-phase. Transcript-success too.)
   local fails=0 mode src
   for a in "${verify[@]}"; do
-    for mode in read-only read-write; do
+    for mode in ${argv_modes[@]+"${argv_modes[@]}"}; do
       for src in prompt prompt-file; do
         argv_equiv "$a" "$mode" "$src" || fails=$((fails + 1))
       done
     done
+    if enforced_readonly "$a"; then
+      non_mutation_check "$a" || fails=$((fails + 1))
+    fi
   done
   if [ "$fails" -gt 0 ]; then
-    echo "live smoke: $fails (agent, mode, prompt-source) case(s) failed argv equivalence" >&2
+    echo "live smoke: $fails live check(s) failed for ${verify[*]}" >&2
     return 1
   fi
-  echo "live smoke: argv equivalence verified for ${verify[*]} (read-only+read-write x prompt+prompt-file)"
+  echo "live smoke: all live checks passed for ${verify[*]} (argv equivalence + enforced read-only non-mutation)"
   return 0
 }
 
