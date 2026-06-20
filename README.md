@@ -263,6 +263,23 @@ when the quota is unconfirmable (IDE closed / not logged in) it degrades to the 
 spending the unconfirmed primary. It also records the real output's keys/types (no values) as a
 schema-drift detector.
 
+**Decision contract.** The quota check is a strict, read-only protocol:
+
+1. **Read-only.** The driver runs only `antigravity-usage --json` (read-only); it **never** calls the
+   quota-spending `wakeup`.
+2. **Primary iff confirmed-available.** The limited 3rd-party primary runs **only** when the quota CLI
+   positively reports it available.
+3. **Fallback otherwise.** On `exhausted`, or an `unknown`/unconfirmable result (IDE closed, CLI
+   absent, timeout, or unparseable output), the larger-limit Gemini `fallback` runs instead — the
+   unconfirmed primary is **never** spent.
+4. **Keys read.** The decision reads only these `antigravity-usage --json` fields: the top-level
+   `models` array, and each model's `label`, `remainingPercentage`, and `isExhausted`. No other field,
+   value, or account identifier is read into the run or written to any recorded evidence.
+
+This contract is pinned offline (`tests/run.sh`: the fallback model-pick, graceful-degradation,
+never-spend-`wakeup`, and sanitised quota-schema oracles) and verified against the real CLI by the
+live harness above.
+
 ## Fan-out observability
 
 A `--agent all` fan-out records, per agent, a **result record** built entirely from **control-plane
