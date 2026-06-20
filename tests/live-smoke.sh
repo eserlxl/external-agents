@@ -14,7 +14,9 @@
 #   1          : arm the harness — discover reachable agents and run live checks.
 #
 # This mirrors the existing EXTERNAL_AGENTS_* convention (EXTERNAL_AGENTS_OUT,
-# EXTERNAL_AGENTS_AGY_QUOTA_CMD, …). Run from anywhere:  bash tests/live-smoke.sh
+# EXTERNAL_AGENTS_AGY_QUOTA_CMD, …). A sibling opt-in harness, tests/install-smoke.sh, reuses the
+# SAME EXTERNAL_AGENTS_LIVE arming switch to prove the package installs/upgrades from a published tag.
+# Run from anywhere:  bash tests/live-smoke.sh
 #
 # Sourceable: every step lives in a function and main() runs ONLY when this script is
 # executed directly, so tests/run.sh can source it to unit-test the helpers offline.

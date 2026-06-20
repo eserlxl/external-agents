@@ -97,6 +97,14 @@ deliberately deferred. **Authentication is your responsibility:** sign each agen
 `cursor-agent login`, plus the sign-in `codex` / `agy` / `claude` each need), then confirm a real
 round-trip with the opt-in [live smoke harness](#live-smoke-opt-in).
 
+**Verifying a packaged release.** Beyond `--check`, an opt-in install/upgrade smoke
+([`tests/install-smoke.sh`](tests/install-smoke.sh)) proves the package installs and upgrades **from a
+published tag** (not a branch): armed with `EXTERNAL_AGENTS_LIVE=1` it clones the repo at a tag into a
+throwaway tree and confirms the loaded driver answers `--check` (presence) and `--version` (the
+lockstep version), with the upgrade variant asserting `--version` advances across tags. Without the
+arming switch it is a clean no-op, exactly like the live smoke harness — the procedure is in
+[RELEASING.md](RELEASING.md).
+
 ## Usage
 
 Natural language (skill):

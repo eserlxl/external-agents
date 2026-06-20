@@ -114,3 +114,28 @@ A mismatch means the tag was cut against the wrong commit or a stale version —
 (`git tag -d vX.Y.Z`, then redo step 6) so the published tag always equals the version in the lockstep
 surfaces. Because plugin.json drives the lockstep, checking the tag against it transitively checks the
 tag against the skill frontmatter, README badge, and CHANGELOG header too.
+
+## Install / upgrade smoke (opt-in)
+
+The offline gate (`tests/run.sh`) proves the *driver* works and the live smoke
+([`tests/live-smoke.sh`](tests/live-smoke.sh)) proves the *agents* round-trip, but neither proves the
+**package installs** from a published tag. After pushing a tag, run the opt-in install/upgrade smoke to
+confirm a release loads end to end. It is gated behind the **same** `EXTERNAL_AGENTS_LIVE` arming switch
+as the live smoke and is a clean no-op without it (so it never enters the offline CI gate):
+
+```bash
+EXTERNAL_AGENTS_LIVE=1 bash tests/install-smoke.sh
+```
+
+What it does, armed:
+
+- **Install from a tag (not a branch).** Clones the repo at the newest `vX.Y.Z` tag into a disposable
+  tree under `$TMPDIR`, "loads" the plugin from that checkout, and verifies the driver answers
+  `scripts/run-agent.sh --check` (a **presence** preflight — never an auth call) and `--version` (the
+  lockstep version). The working tree is never touched.
+- **Upgrade.** Clones the previous tag, then checks out the newer tag, and asserts `--version`
+  **advances** across the two tags.
+
+Override the tags with `EXTERNAL_AGENTS_INSTALL_TAG`, `EXTERNAL_AGENTS_UPGRADE_FROM`, and
+`EXTERNAL_AGENTS_UPGRADE_TO`. A passing `--check` proves **presence**, not readiness — readiness
+(authenticated, round-tripping agents) is deferred to the per-agent auth contract and the live smoke.
