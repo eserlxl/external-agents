@@ -431,6 +431,14 @@ reads `"unavailable"` unless a CLI's real output happens to match a recognized s
 [live/E2E harness](#live-smoke-opt-in); the offline suite proves only that a recognized shape **is**
 extracted and an absent one yields `"unavailable"` (via committed fixtures).
 
+**Reading the signals (consumer caveat).** Treat `"unavailable"` as *no data* — filter it out before
+aggregating (e.g. `jq 'select(.signals.tokens != "unavailable")'`), never as a zero. A present value
+is the **CLI's own self-report**, lifted verbatim and best-effort — not independently measured — so
+use it for rough comparison, not billing. For latency and output size, prefer the
+**driver-measured** [`sec` and `bytes`](#per-run-metadata-record) fields, recorded for *every* run
+regardless of what the CLI prints; `signals.tokens` / `signals.cost` are the optional, CLI-dependent
+extras layered on top.
+
 ## Safety
 
 For the full trust-boundary analysis and the per-CLI enforcement matrix, see
