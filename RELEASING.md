@@ -140,3 +140,13 @@ Override the tags with `EXTERNAL_AGENTS_INSTALL_TAG`, `EXTERNAL_AGENTS_UPGRADE_F
 `EXTERNAL_AGENTS_UPGRADE_TO`. A passing `--check` proves **presence**, not readiness — readiness
 (authenticated, round-tripping agents) is deferred to the
 [per-agent auth prerequisites](README.md#per-agent-auth-prerequisites-readiness) and the live smoke.
+
+## Distribution contract
+
+The release ships exactly **one** manifest, `.claude-plugin/plugin.json` — there is no second host
+manifest, a decision recorded in the `scripts/bump-version.sh` header and enforced by the
+**dual-manifest decision lock** test (`tests/run.sh`). Its **listing/distribution** fields are pinned
+by the distribution-manifest oracle in the offline suite: `homepage` and `repository` must be
+URL-shaped, `license` must equal the `SPDX-License-Identifier` in `LICENSE` (`GPL-3.0-or-later`), and
+the manifest `version` must match the lockstep version. The contributor-facing detail is in
+[CONTRIBUTING.md](CONTRIBUTING.md#packaging-contract-install-critical-manifest-fields).

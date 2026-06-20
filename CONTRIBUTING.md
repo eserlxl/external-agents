@@ -58,6 +58,17 @@ that removing one fails the offline suite. The set is:
 Keep this list and `MANIFEST_REQUIRED_FIELDS` in sync — a set-parity check in `tests/run.sh` fails if
 they drift apart.
 
+Beyond presence, the **listing / distribution** subset — `homepage`, `repository`, `license` — is held
+to a shape contract by the distribution-manifest oracle in `tests/run.sh`: `homepage`/`repository`
+must be URL-shaped, `license` must be an SPDX identifier that **equals the `SPDX-License-Identifier`
+in [`LICENSE`](LICENSE)** (`GPL-3.0-or-later`), and the manifest `version` must equal the lockstep
+version. A malformed or omitted listing field fails the offline suite.
+
+**One manifest, by decision.** This repo ships exactly **one** manifest — `.claude-plugin/plugin.json`
+— and no second host manifest (e.g. no `.codex-plugin/`). `scripts/bump-version.sh` records this in its
+header and the **dual-manifest decision lock** test in `tests/run.sh` enforces it: the bumper must
+never reference a second manifest again. Keep any distribution change consistent with that decision.
+
 ## Secret & safety discipline (must always hold)
 
 These are standing policies a contribution must uphold; each is enforced at a specific gate in
