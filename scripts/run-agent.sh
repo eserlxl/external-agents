@@ -638,7 +638,8 @@ format_masked_argv() {
 # as JSON numbers (falling back to the raw string if non-numeric). `tokens`/`cost` are the Phase 5.3
 # best-effort signals: a numeric token count renders as a number, the cost string is kept verbatim,
 # and the literal "unavailable" passes through unchanged (never a fabricated number).
-# The emitted field set + JSON types are the published contract in schema/run-record.schema.json.
+# The emitted field set + JSON types are the published contract in schema/run-record.schema.json
+# (a tests/run.sh drift guard fails if this emitter's keys and the schema's properties diverge).
 write_meta_json() {
   local file="$1"; shift
   case "$JSON_BACKEND" in

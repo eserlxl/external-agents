@@ -613,6 +613,28 @@ else
   skip "run-record schema conformance (timeout/python3/jsonschema unavailable)"
 fi
 
+echo "== run-record schema <-> emitter drift guard (write_meta_json field set == schema properties) =="
+# Modeled on the enforcement-matrix guard: the record field set lives in TWO places — the emitter
+# (write_meta_json in scripts/run-agent.sh) and the published schema (schema/run-record.schema.json).
+# A future rename/retype/drop could change one without the other. Assert the emitter's emitted key set
+# equals the schema's record + signals property names, so the contract cannot silently rot. Offline.
+if command -v python3 >/dev/null 2>&1; then
+  drift_emit="$(awk '/^write_meta_json\(\) \{/{f=1} f{print} f&&/^\}/{exit}' "$ROOT/scripts/run-agent.sh" \
+    | grep -oE '"[a-z_]+":' | tr -d '":' | sort -u | paste -sd' ' -)"
+  drift_schema="$(python3 -c 'import json,sys
+s=json.load(open(sys.argv[1]))
+ks=list(s["definitions"]["record"]["properties"])+list(s["definitions"]["signals"]["properties"])
+print(" ".join(sorted(set(ks))))' "$ROOT/schema/run-record.schema.json" 2>/dev/null)"
+  if [ -n "$drift_emit" ] && [ "$drift_emit" = "$drift_schema" ]; then
+    ok "schema drift: write_meta_json field set equals the schema's record+signals properties"
+  else
+    bad "schema drift: write_meta_json field set equals the schema's record+signals properties" \
+        "emitter=[$drift_emit] schema=[$drift_schema]"
+  fi
+else
+  skip "run-record schema drift guard (python3 unavailable)"
+fi
+
 echo "== transcript secret-redaction (stub agent, real redact path) =="
 # run_stub_transcript TEXT FILEVAR -> stdout = the driver's echoed (redacted) transcript;
 # the persisted (redacted) transcript file content is written to the path FILEVAR (a disk
