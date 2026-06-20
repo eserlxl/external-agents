@@ -482,6 +482,30 @@ else
   skip "--json consensus parity (jq/python3/timeout unavailable)"
 fi
 
+echo "== interface/driver separation leak guard (interface files contain no driving logic) =="
+# The interface layer (commands/external-agents.md, skills/external-agents/SKILL.md) is THIN: it
+# resolves intent and HANDS OFF to the driver — it must NOT reimplement driving logic. Assert neither
+# file contains a driver-INTERNAL function name (the signature of copied/reimplemented logic). The
+# interface MAY invoke run-agent.sh (the hand-off) and describe flags in prose — only reimplementation
+# is a leak. Fails if driving logic is added to either interface file.
+leak_found=""
+for ifile in commands/external-agents.md skills/external-agents/SKILL.md; do
+  for fn in build_argv run_one format_masked_argv agent_bin classify_outcome write_meta_json append_index_row extract_signal agy_model_status; do
+    grep -qF "$fn" "$ROOT/$ifile" && leak_found="$leak_found $ifile:$fn"
+  done
+done
+if [ -z "$leak_found" ]; then
+  ok "interface separation: no driver-internal logic leaked into the interface files"
+else
+  bad "interface separation: no driver-internal logic leaked into the interface files" "driving logic in:$leak_found"
+fi
+# Positive: both interface files DO hand off to the driver (so the guard is checking real, wired files).
+if grep -qF 'run-agent.sh' "$ROOT/skills/external-agents/SKILL.md" && grep -qF 'run-agent.sh' "$ROOT/commands/external-agents.md"; then
+  ok "interface separation: both interface files hand off to scripts/run-agent.sh"
+else
+  bad "interface separation: both interface files hand off to scripts/run-agent.sh" "an interface file does not reference the driver"
+fi
+
 echo "== agents.json schema validation (draft-07 contract) =="
 if python3 -c 'import jsonschema' 2>/dev/null; then
   # schema_check FILE -> "OK" if FILE validates against schema/agents.schema.json, else "REJECTED".
