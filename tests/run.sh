@@ -287,6 +287,33 @@ else
   printf '  skip per-agent record test (timeout unavailable)\n'
 fi
 
+echo "== cross-agent summary block (stub fan-out, no live CLI) =="
+# A --agent all fan-out prints a compact summary block (one row per agent + expected columns).
+# Assert its shape with stub agents, plus the write-mode target-wide note on a write fan-out.
+if command -v timeout >/dev/null 2>&1; then
+  sumstub="$(mktemp -d)"
+  for b in agy codex cursor-agent; do printf '#!/usr/bin/env bash\necho "resp"\n' >"$sumstub/$b"; chmod +x "$sumstub/$b"; done
+  sumtgt="$(mktemp -d)"; sumodir="$(mktemp -d)"
+  sum_out="$(PATH="$sumstub:$PATH" EXTERNAL_AGENTS_OUT="$sumodir" bash "$RUN" --agent all --effort high --read-only --target "$sumtgt" --prompt x 2>/dev/null)"
+  assert_contains "summary: header block present"      "$sum_out" "fan-out summary"
+  assert_contains "summary: expected columns (agent…)" "$sum_out" "agent"
+  assert_contains "summary: fallback column present"   "$sum_out" "fallback"
+  sumblock="$(printf '%s\n' "$sum_out" | sed -n '/fan-out summary/,/^$/p')"
+  for a in agy codex cursor; do assert_contains "summary: row for $a" "$sumblock" "$a"; done
+  case "$sum_out" in *target-wide*) bad "summary: no target-wide note on a read-only fan-out" "note appeared";; *) ok "summary: no target-wide note on a read-only fan-out";; esac
+  rm -rf "$sumstub" "$sumtgt" "$sumodir"
+  # Write fan-out: the target-wide note IS present (the write-mode code path shape).
+  wsumstub="$(mktemp -d)"
+  for b in agy codex cursor-agent; do printf '#!/usr/bin/env bash\necho resp\n' >"$wsumstub/$b"; chmod +x "$wsumstub/$b"; done
+  wsumtgt="$(mktemp -d)"; wsumodir="$(mktemp -d)"
+  ( cd "$wsumtgt" && git init -q && git -c user.email=t@t -c user.name=t commit -q --allow-empty -m init )
+  wsum_out="$(PATH="$wsumstub:$PATH" EXTERNAL_AGENTS_OUT="$wsumodir" bash "$RUN" --agent all --write --yes --target "$wsumtgt" --prompt x 2>/dev/null)"
+  assert_contains "summary: write fan-out notes target-wide verification" "$wsum_out" "target-wide"
+  rm -rf "$wsumstub" "$wsumtgt" "$wsumodir"
+else
+  printf '  skip summary-block test (timeout unavailable)\n'
+fi
+
 echo "== transcript secret-redaction (stub agent, real redact path) =="
 # run_stub_transcript TEXT FILEVAR -> stdout = the driver's echoed (redacted) transcript;
 # the persisted (redacted) transcript file content is written to the path FILEVAR (a disk
