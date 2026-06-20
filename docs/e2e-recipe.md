@@ -151,8 +151,13 @@ The recipes have two distinct halves — know which is which before reading the 
   read-only **non-mutation** (a rogue stub that writes is a hard failure), the read-write
   **marker-content** check (the seed file must gain the exact marker line), the **post-write
   verification** block's presence (git target) and suppression (non-git target) plus the
-  **no-baseline warning**, and `run-e2e.sh`'s discover-then-dispatch over all three recipes. These are
-  part of the offline CI gate and never touch a real CLI.
+  **no-baseline warning**, and `run-e2e.sh`'s discover-then-dispatch over all three recipes. Each
+  recipe's oracle is additionally driven under **multiple stub agents** — the enforced `codex` and the
+  best-effort `agy` (which only *reports* a read-only mutation, never hard-fails) — the driver's masked
+  launch argv is pinned equal to its `--dry-run` argv across **both modes** (read-only / read-write)
+  and **both prompt sources** (`--prompt` / `--prompt-file`), and every recipe is proven **uniformly
+  skip-when-absent** (armed but with no agent CLI on `PATH` → exit 0). These are part of the offline CI
+  gate and never touch a real CLI.
 
 - **Requires a real, authenticated CLI (opt-in, `EXTERNAL_AGENTS_LIVE=1`):** only the **real
   round-trip** — a genuine agent actually running, producing a non-empty transcript at `rc=0`, and
