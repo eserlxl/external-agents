@@ -1304,17 +1304,30 @@ echo "== opt-in gate: live/e2e harnesses are offline no-ops without the arming s
 # switch cleared (and a hermetic EXTERNAL_AGENTS_OUT so live-smoke's status record never touches
 # $HOME) and assert the documented skip line plus exit 0.
 optin_out="$(mktemp -d)"
+optin_covered=()
 optin_gate() {  # script-relpath  skip-needle
   local rel="$1" needle="$2" out rc
   out="$(env -u EXTERNAL_AGENTS_LIVE EXTERNAL_AGENTS_OUT="$optin_out" bash "$ROOT/$rel" 2>/dev/null)"; rc=$?
   assert_exit     "opt-in gate: $rel exits 0 without the switch" 0 "$rc"
   assert_contains "opt-in gate: $rel prints its skip line"       "$out" "$needle"
+  optin_covered+=("$rel")
 }
 optin_gate "tests/live-smoke.sh"          "live smoke skipped (set EXTERNAL_AGENTS_LIVE=1)"
 optin_gate "tests/e2e/run-e2e.sh"         "e2e recipes skipped (set EXTERNAL_AGENTS_LIVE=1)"
 optin_gate "tests/e2e/review-readonly.sh" "e2e review-readonly skipped (set EXTERNAL_AGENTS_LIVE=1)"
 optin_gate "tests/e2e/edit-readwrite.sh"  "e2e edit-readwrite skipped (set EXTERNAL_AGENTS_LIVE=1)"
 optin_gate "tests/e2e/edit-non-git.sh"    "e2e edit-non-git skipped (set EXTERNAL_AGENTS_LIVE=1)"
+# Completeness: the no-op proof must cover EVERY live/e2e entry point on disk (tests/live-smoke.sh +
+# tests/e2e/*.sh, excluding the lib/ helpers) — so a newly added live script or recipe variant cannot
+# silently escape the opt-in gate. Mirrors the e2e recipe dispatch drift guard.
+optin_disk="$( { echo "tests/live-smoke.sh"; for f in "$ROOT"/tests/e2e/*.sh; do echo "tests/e2e/$(basename "$f")"; done; } | sort -u )"
+optin_cov_sorted="$(printf '%s\n' "${optin_covered[@]}" | sort -u)"
+if [ "$optin_cov_sorted" = "$optin_disk" ]; then
+  ok "opt-in gate: no-op proof covers every live/e2e entry point on disk (${#optin_covered[@]})"
+else
+  bad "opt-in gate: no-op proof covers every live/e2e entry point on disk" \
+      "covered=[$(printf '%s' "$optin_cov_sorted" | paste -sd' ' -)] disk=[$(printf '%s' "$optin_disk" | paste -sd' ' -)]"
+fi
 rm -rf "$optin_out"
 
 echo "== docs/e2e-recipe.md offline-oracle coverage lock =="
