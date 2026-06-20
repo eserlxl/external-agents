@@ -47,6 +47,7 @@ seed="$PROMPT"
 stage_no=0
 completed=0
 rc_final=0
+SUMMARY=()   # one content-free line per stage (agent/class/rc/sec/bytes) — never any transcript text
 for ag in ${stages[@]+"${stages[@]}"}; do
   [ -n "$ag" ] || continue
   stage_no=$((stage_no + 1))
@@ -57,8 +58,15 @@ for ag in ${stages[@]+"${stages[@]}"}; do
   EXTERNAL_AGENTS_RUN_ID="$PIPE_ID" bash "$RUN" --agent "$ag" --prompt-file "$pf" --out "$sdir" ${PASS[@]+"${PASS[@]}"} >/dev/null 2>&1
   rc=$?
   rm -f "$pf"
-  ec="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1])).get("error_class","?"))' "$sdir/$ag.meta.json" 2>/dev/null || true)"
+  # Per-stage content-plane facts (class/rc/sec/bytes) from the record — never the transcript.
+  facts="$(python3 -c 'import json,sys
+try:
+    d=json.load(open(sys.argv[1])); print("%s|%s|%s|%s" % (d.get("error_class","?"),d.get("rc","?"),d.get("sec","?"),d.get("bytes","?")))
+except Exception:
+    print("?|?|?|?")' "$sdir/$ag.meta.json" 2>/dev/null || echo "?|?|?|?")"
+  IFS='|' read -r ec rc_f sec_f bytes_f <<<"$facts"
   [ "$ec" = "ok" ] && completed=$((completed + 1))
+  SUMMARY+=("  stage $stage_no/$total  $ag  class=$ec rc=$rc_f sec=$sec_f bytes=$bytes_f")
   printf 'run-pipeline: stage %d/%d %s -> %s\n' "$stage_no" "$total" "$ag" "${ec:-rc=$rc}"
   if [ "$ec" != "ok" ]; then
     rc_final=1
@@ -74,5 +82,9 @@ for ag in ${stages[@]+"${stages[@]}"}; do
 --- prior stage ($ag) output (redacted) ---
 $art"
 done
+# Deterministic, content-free outcome summary (mirrors the fan-out summary discipline): per-stage
+# control-plane facts plus the completed-through-stage-K verdict — never any transcript text.
+echo "run-pipeline: outcome summary (control-plane only — agent/class/rc/sec/bytes, no transcript text):"
+printf '%s\n' ${SUMMARY[@]+"${SUMMARY[@]}"}
 printf 'run-pipeline: completed-through-stage %d/%d (run_id %s, out %s)\n' "$completed" "$total" "$PIPE_ID" "$PIPE_DIR"
 exit "$rc_final"

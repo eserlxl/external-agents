@@ -382,6 +382,26 @@ else
   skip "stub-driven pipeline oracle (timeout/python3 unavailable)"
 fi
 
+echo "== pipeline outcome summary is content-free (control-plane facts only, no transcript text) =="
+# The deterministic pipeline outcome summary (per-stage agent/class/rc/sec/bytes + completed-through-
+# stage-K) must carry control-plane facts ONLY — never transcript text, mirroring the fan-out summary.
+if command -v timeout >/dev/null 2>&1 && command -v python3 >/dev/null 2>&1; then
+  posstub="$(mktemp -d)"
+  printf '#!/usr/bin/env bash\necho "PIPE_TRANSCRIPT_LEAK_MARKER body"\n' >"$posstub/codex";  chmod +x "$posstub/codex"
+  printf '#!/usr/bin/env bash\necho "PIPE_TRANSCRIPT_LEAK_MARKER body"\n' >"$posstub/claude"; chmod +x "$posstub/claude"
+  posbase="$(mktemp -d)"; postgt="$(mktemp -d)"
+  posout="$(PATH="$posstub:$PATH" EXTERNAL_AGENTS_OUT="$posbase" bash "$ROOT/scripts/run-pipeline.sh" --pipeline codex,claude --prompt p --read-only --target "$postgt" 2>&1)"
+  rm -rf "$posstub" "$posbase" "$postgt"
+  assert_contains "pipeline summary: per-stage control-plane facts present"        "$posout" "class=ok rc=0 sec="
+  assert_contains "pipeline summary: deterministic completed-through-stage verdict" "$posout" "completed-through-stage 2/2"
+  case "$posout" in
+    *PIPE_TRANSCRIPT_LEAK_MARKER*) bad "pipeline summary: carries NO transcript text" "a transcript marker leaked into the pipeline output";;
+    *)                             ok  "pipeline summary: carries NO transcript text";;
+  esac
+else
+  skip "pipeline outcome summary content-free oracle (timeout/python3 unavailable)"
+fi
+
 echo "== agents.json schema validation (draft-07 contract) =="
 if python3 -c 'import jsonschema' 2>/dev/null; then
   # schema_check FILE -> "OK" if FILE validates against schema/agents.schema.json, else "REJECTED".
