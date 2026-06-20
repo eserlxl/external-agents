@@ -1121,6 +1121,41 @@ else
   skip "e2e edit-readwrite recipe oracle (timeout unavailable)"
 fi
 
+echo "== e2e recipes dispatch under multiple stub agents (enforced + best-effort, offline) =="
+# The per-recipe oracles above each drive a single 'codex' stub, so a regression dropping an agent
+# from a recipe would still pass. Prove reachable-set BREADTH: every recipe dispatches under an
+# ENFORCED agent (codex) AND the BEST-EFFORT agy, and the enforced-vs-best-effort non-mutation
+# distinction holds — an enforced agent that writes during a read-only run HARD-FAILS, while agy only
+# reports it. EXTERNAL_AGENTS_AGY_QUOTA_CMD=false keeps agy off any real quota CLI; all stubs offline.
+if command -v timeout >/dev/null 2>&1; then
+  matpl="$(mktemp -d)"
+  printf '#!/usr/bin/env bash\nprintf "ok\\n"\n'                                     >"$matpl/clean"
+  printf '#!/usr/bin/env bash\nprintf "ok\\n"\nprintf "%%s\\n" "%s" >> "%s"\n'        "$E2E_FIXTURE_MARKER" "$E2E_FIXTURE_SEED" >"$matpl/seed"
+  printf '#!/usr/bin/env bash\nprintf "ok\\n"\nprintf "%%s\\n" "%s" >> notes.txt\n'   "$E2E_FIXTURE_MARKER" >"$matpl/notes"
+  printf '#!/usr/bin/env bash\nprintf "ok\\n"\nprintf "rogue\\n" > ROGUE.txt\n'       >"$matpl/rogue"
+  ma_dispatch() {  # recipe agent bin template expect-rc label
+    local recipe="$1" agent="$2" bin="$3" tpl="$4" exp="$5" label="$6" d o
+    d="$(mktemp -d)"; o="$(mktemp -d)"
+    cp "$matpl/$tpl" "$d/$bin"; chmod +x "$d/$bin"
+    PATH="$d:$PATH" EXTERNAL_AGENTS_LIVE=1 EXTERNAL_AGENTS_OUT="$o" EXTERNAL_AGENTS_AGY_QUOTA_CMD=false \
+      bash "$ROOT/tests/e2e/$recipe.sh" "$agent" >/dev/null 2>&1
+    assert_exit "multi-agent: $label" "$exp" "$?"
+    rm -rf "$d" "$o"
+  }
+  ma_dispatch review-readonly codex codex clean 0 "review-readonly dispatches under enforced codex (clean)"
+  ma_dispatch review-readonly agy   agy   clean 0 "review-readonly dispatches under best-effort agy (clean)"
+  ma_dispatch edit-readwrite  codex codex seed  0 "edit-readwrite dispatches under enforced codex (marker)"
+  ma_dispatch edit-readwrite  agy   agy   seed  0 "edit-readwrite dispatches under best-effort agy (marker)"
+  ma_dispatch edit-non-git    codex codex notes 0 "edit-non-git dispatches under enforced codex (marker)"
+  ma_dispatch edit-non-git    agy   agy   notes 0 "edit-non-git dispatches under best-effort agy (marker)"
+  ma_dispatch review-readonly codex codex rogue 1 "enforced codex read-only mutation -> hard fail"
+  ma_dispatch review-readonly agy   agy   rogue 0 "best-effort agy read-only mutation -> reported, not failed"
+  rm -rf "$matpl"
+  unset -f ma_dispatch
+else
+  skip "e2e multi-agent dispatch oracle (timeout unavailable)"
+fi
+
 echo "== e2e run-e2e.sh dispatch (stub-driven, offline) =="
 # Drive run-e2e.sh's discover-then-dispatch path against a mode-aware stub agent: a read-only argv
 # means no writes (review-readonly stays clean); a write argv appends the marker to seed.txt/notes.txt
