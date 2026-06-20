@@ -115,7 +115,8 @@ bash scripts/run-agent.sh --agent agy --dry-run --prompt "..."
 | `--timeout S` | per-agent timeout, seconds (default 1800) |
 | `--out DIR` | transcript dir (default `~/.external-agents/logs/<project>`; the base dir is overridable with the `EXTERNAL_AGENTS_OUT` env var) |
 | `--conf FILE` | agent config JSON (default `agents.json`) |
-| `--list` / `--check` / `--dry-run` / `--version` | inspect config / preflight reader + CLIs / preview argv / print the plugin version |
+| `--list` / `--check` / `--discover` / `--dry-run` / `--version` | inspect config / preflight reader + CLIs / machine-readable agent reachability / preview argv / print the plugin version |
+| `--json` | also emit a machine-readable JSON run summary (opt-in; default output unchanged) |
 
 ## Configuration — `agents.json`
 

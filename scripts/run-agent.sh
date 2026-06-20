@@ -93,6 +93,7 @@ CHECK=0
 DISCOVER=0
 DRYRUN=0
 VERSION=0
+JSON=0
 
 usage() {
   cat <<'EOF'
@@ -122,6 +123,7 @@ Usage:
   --list        print the parsed agent config (tiers + enabled) and exit
   --check       preflight: report the JSON reader and whether each candidate CLI is on PATH
   --discover    print one machine-readable line per agent: "<a> <present|missing> <bin>"
+  --json        also emit a machine-readable JSON run summary (opt-in; default output unchanged)
   --dry-run     print each agent's resolved launch argv without running it
   --version, -V print the external-agents plugin version and exit
   --yes, -y     confirm a write run whose --target is not the current directory
@@ -153,6 +155,7 @@ while [ $# -gt 0 ]; do
     --list) LIST=1; shift;;
     --check) CHECK=1; shift;;
     --discover) DISCOVER=1; shift;;
+    --json) JSON=1; shift;;
     -y|--yes) YES=1; shift;;
     --dry-run) DRYRUN=1; shift;;
     --version|-V) VERSION=1; shift;;
@@ -688,6 +691,9 @@ for a in "${RUN[@]}"; do
   echo
   if [ "$rc" = "0" ] && [ "${bytes:-0}" -gt 0 ]; then ok=$((ok+1)); else fail=$((fail+1)); fi
 done
+# Deterministic outcome agreement from the per-agent success tally (used by both the human summary
+# and the opt-in JSON). all-ok = every agent succeeded; all-fail = none did; else mixed.
+if [ "$fail" -eq 0 ]; then AGREEMENT="all-ok"; elif [ "$ok" -eq 0 ]; then AGREEMENT="all-fail"; else AGREEMENT="mixed"; fi
 # Cross-agent summary: a compact digest with one row per fan-out agent, rendered from the Phase
 # 4.1 records — beside (not instead of) the verbatim transcripts above. Fan-out only; single-agent
 # runs print no summary, and the transcript echo + the stderr tally are unchanged.
@@ -711,11 +717,13 @@ if [ "${#RUN[@]}" -gt 1 ]; then
       echo "  no-mutation: the tree is NOT clean after a read-only fan-out (agy is best-effort, or pre-existing changes — inspect 'git status')"
     fi
   fi
-  # Deterministic outcome agreement from the per-agent success tally (all-ok / mixed / all-fail).
-  # This is an OUTCOME signal, not semantic content agreement (which needs a confirmed schema).
-  if [ "$fail" -eq 0 ]; then echo "  agreement: all-ok ($ok/$((ok + fail)) agents succeeded)"
-  elif [ "$ok" -eq 0 ]; then echo "  agreement: all-fail (0/$((ok + fail)) agents succeeded)"
-  else echo "  agreement: mixed ($ok ok, $fail failed)"; fi
+  # Render the deterministic outcome agreement (computed above) — an OUTCOME signal, not semantic
+  # content agreement (which needs a confirmed schema).
+  case "$AGREEMENT" in
+    all-ok)   echo "  agreement: all-ok ($ok/$((ok + fail)) agents succeeded)";;
+    all-fail) echo "  agreement: all-fail (0/$((ok + fail)) agents succeeded)";;
+    *)        echo "  agreement: mixed ($ok ok, $fail failed)";;
+  esac
   echo
 fi
 # After a write run, PRODUCE the verification (not just recommend it): show what
@@ -725,6 +733,18 @@ if [ "$MODE" = "write" ] && [ -n "$TOP" ]; then
   git -C "$TARGET" status --porcelain 2>/dev/null
   git -C "$TARGET" --no-pager diff --stat 2>/dev/null
   echo
+fi
+# Opt-in JSON run summary (--json) — emitted in ADDITION to the default output above (which stays
+# byte-for-byte unchanged when --json is absent). Run-level fields here; the per-agent objects are
+# added by the next sub-phase. Built with python3/jq for safe escaping.
+if [ "$JSON" = "1" ]; then
+  if   command -v python3 >/dev/null 2>&1; then
+    python3 -c 'import json,sys; print(json.dumps({"mode":sys.argv[1],"tier":sys.argv[2],"ok":int(sys.argv[3]),"fail":int(sys.argv[4]),"agreement":sys.argv[5]}))' \
+      "$MODE" "${TIER:-}" "$ok" "$fail" "$AGREEMENT"
+  elif command -v jq >/dev/null 2>&1; then
+    jq -n --arg mode "$MODE" --arg tier "${TIER:-}" --argjson ok "$ok" --argjson fail "$fail" --arg agreement "$AGREEMENT" \
+      '{mode:$mode,tier:$tier,ok:$ok,fail:$fail,agreement:$agreement}'
+  fi
 fi
 echo "external-agents: $ok ok, $fail failed  (transcripts in $OUT)" >&2
 [ "$fail" -eq 0 ]
