@@ -635,6 +635,50 @@ else
   skip "run-record schema drift guard (python3 unavailable)"
 fi
 
+echo "== error-class + bounded-retry failure injection (stub agents; both backends) =="
+# Inject failures with stub agents and assert the recorded error_class + retry behaviour: (a) a
+# transient 5xx, (b) an auth-shaped failure (never retried even with RETRY_MAX>0), (c) a sleep past a
+# short --timeout, and (d) a transient retried exactly N times (attempts=N+1). Run under jq AND a
+# python3-only PATH. Plus (e) a safety gate refuses BEFORE launch, so a safety-refusal is never
+# retried, and classify_outcome maps a gate refusal to that class. Offline; no live CLI.
+if command -v timeout >/dev/null 2>&1 && command -v python3 >/dev/null 2>&1; then
+  firestr="$(mktemp -d)"; mk_restricted_bin "$firestr"   # python3, NO jq -> forces JSON_BACKEND=py
+  fisl="$(command -v sleep 2>/dev/null || true)"; [ -n "$fisl" ] && ln -s "$fisl" "$firestr/bin/sleep" 2>/dev/null   # stub (c) needs sleep
+  fi_run() {  # bashbin  pathprefix  stub-body  retry-max  timeout -> "<class> <attempts> <retried>"
+    local bb="$1" pp="$2" body="$3" rmax="$4" tmo="$5" d od tg
+    d="$(mktemp -d)"; od="$(mktemp -d)"; tg="$(mktemp -d)"
+    printf '#!/usr/bin/env bash\n%s\n' "$body" >"$d/codex"; chmod +x "$d/codex"
+    PATH="$d:$pp" EXTERNAL_AGENTS_OUT="$od" EXTERNAL_AGENTS_RETRY_MAX="$rmax" EXTERNAL_AGENTS_RETRY_BACKOFF=0 \
+      "$bb" "$RUN" --agent codex --effort high --read-only --timeout "$tmo" --target "$tg" --prompt x >/dev/null 2>&1
+    python3 -c 'import json,sys
+d=json.load(open(sys.argv[1])); print(d.get("error_class"), d.get("attempts"), d.get("retried"))' \
+      "$od/$(basename "$tg")/codex.meta.json" 2>/dev/null
+    rm -rf "$d" "$od" "$tg"
+  }
+  for be in jq py; do
+    if [ "$be" = "jq" ]; then
+      command -v jq >/dev/null 2>&1 || { skip "failure injection (jq backend: jq unavailable)"; continue; }
+      fibb="bash"; fipp="$PATH"
+    else
+      fibb="$firestr/bin/bash"; fipp="$firestr/bin"
+    fi
+    assert_contains "fi[$be]: 503 non-zero -> transient"                   "$(fi_run "$fibb" "$fipp" 'echo "HTTP 503 service temporarily unavailable" >&2; exit 1' 0 30)" "transient"
+    assert_contains "fi[$be]: auth-shaped -> auth, not retried"            "$(fi_run "$fibb" "$fipp" 'echo "authentication failed" >&2; exit 1' 2 30)" "auth 1 False"
+    assert_contains "fi[$be]: sleeps past --timeout -> timeout"            "$(fi_run "$fibb" "$fipp" 'sleep 5' 0 1)" "timeout"
+    assert_contains "fi[$be]: transient RETRY_MAX=2 -> attempts 3, retried" "$(fi_run "$fibb" "$fipp" 'echo "rate limit exceeded" >&2; exit 1' 2 30)" "transient 3 True"
+  done
+  # (e) a pre-launch safety gate refuses (exit 2) without launching, so a safety-refusal is never retried.
+  fi_sr="$(bash "$RUN" --agent codex --read-only --write --target . --prompt x 2>&1)"; fi_sr_rc=$?
+  assert_exit     "fi: a safety gate refuses before launch (exit 2)" 2 "$fi_sr_rc"
+  assert_contains "fi: gate refusal reported, agent never launched"  "$fi_sr" "mutually exclusive"
+  ficf="$firestr/cf.sh"; sed -n '/^classify_outcome() {/,/^}/p' "$ROOT/scripts/run-agent.sh" >"$ficf"
+  fi_srclass="$(bash -c '. "$0"; classify_outcome GATE 2 /dev/null' "$ficf")"
+  assert_contains "fi: classify_outcome maps a gate refusal to safety-refusal" "$fi_srclass" "safety-refusal"
+  rm -rf "$firestr"
+else
+  skip "failure-injection oracles (timeout/python3 unavailable)"
+fi
+
 echo "== transcript secret-redaction (stub agent, real redact path) =="
 # run_stub_transcript TEXT FILEVAR -> stdout = the driver's echoed (redacted) transcript;
 # the persisted (redacted) transcript file content is written to the path FILEVAR (a disk
