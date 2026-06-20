@@ -103,7 +103,8 @@ tiny-edit prompt, proves a real write round-trips, and checks the driver's post-
   `claude -p <PROMPT> --permission-mode acceptEdits`, `cursor-agent -p --force --trust --workspace
   <fixture> -- <PROMPT>`, `agy -p <PROMPT> --add-dir <fixture> --dangerously-skip-permissions`.
 - **Expected changed file:** the fixture's post-run `git status --porcelain` is non-empty (the agent
-  made an edit), e.g. ` M seed.txt`.
+  made an edit), e.g. ` M seed.txt`, **and** the seed file must contain a line exactly equal to the
+  marker (`reviewed-ok`) — a changed *something* is not enough; the requested content must land.
 - **Expected post-write verification:** the driver PRODUCES, on stdout, the
   `===== git changes after write (in <fixture>) =====` block with `git status --porcelain` and
   `git diff --stat` naming the changed file (e.g. `seed.txt | 1 +`). The recipe asserts the block is
@@ -130,6 +131,9 @@ throwaway directory, to exercise the driver's no-baseline path.
   revert after writes` on stderr — the recipe asserts it is captured in `driver.err`.
 - **Suppressed verification:** with no git baseline the driver SUPPRESSES the
   `===== git changes after write =====` block — the recipe asserts it is absent from stdout.
+- **Marker-content:** with no git diff to confirm the write, the recipe instead asserts `notes.txt`
+  gained a line exactly equal to the marker (`reviewed-ok`) — otherwise an agent that wrote nothing
+  would pass unnoticed.
 - **Opt-in/skip:** unset `EXTERNAL_AGENTS_LIVE` → skip + exit 0.
 
 ```bash
@@ -142,17 +146,24 @@ The recipes have two distinct halves — know which is which before reading the 
 
 - **Runs offline, no CLI (proven by `tests/run.sh`):** the deterministic fixture generator and reset
   (`e2e_make_fixture` / `e2e_fixture_reset`), the evidence capture's masked-argv path (recorded from
-  `--dry-run`, no launch), and every recipe's **skip-when-unarmed** path (`EXTERNAL_AGENTS_LIVE`
-  unset → skip + exit 0). These are part of the offline CI gate and never touch a real CLI.
+  `--dry-run`, no launch), every recipe's **skip-when-unarmed** path (`EXTERNAL_AGENTS_LIVE`
+  unset → skip + exit 0), and — driven by **stub agents** — each recipe's **oracle logic**: enforced
+  read-only **non-mutation** (a rogue stub that writes is a hard failure), the read-write
+  **marker-content** check (the seed file must gain the exact marker line), the **post-write
+  verification** block's presence (git target) and suppression (non-git target) plus the
+  **no-baseline warning**, and `run-e2e.sh`'s discover-then-dispatch over all three recipes. These are
+  part of the offline CI gate and never touch a real CLI.
 
-- **Requires a real, authenticated CLI (opt-in, `EXTERNAL_AGENTS_LIVE=1`):** the actual round-trips —
-  a non-empty transcript at `rc=0`, enforced read-only **non-mutation**, the **post-write
-  verification** block on a git target, and the **no-baseline warning** on a non-git target. These
+- **Requires a real, authenticated CLI (opt-in, `EXTERNAL_AGENTS_LIVE=1`):** only the **real
+  round-trip** — a genuine agent actually running, producing a non-empty transcript at `rc=0`, and
+  honoring read-only / making the requested edit. The recipe *checks* around that round-trip are
+  stub-proven offline (above); what a stub cannot prove is that a *real* CLI behaves correctly. These
   launch the agent, so they need the CLI installed and signed in, and are **never** in the offline CI
   gate. An agent whose CLI is absent is skipped cleanly.
 
-So a green offline `tests/run.sh` proves the framework's plumbing; only an armed run against an
-authenticated CLI proves a given agent actually round-trips.
+So a green offline `tests/run.sh` proves the framework's plumbing **and the recipe oracle logic** (via
+stub agents); only an armed run against an authenticated CLI proves a given *real* agent actually
+round-trips.
 
 ## Per-agent reproducibility checklist
 

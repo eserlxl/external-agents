@@ -1119,6 +1119,16 @@ optin_gate "tests/e2e/edit-readwrite.sh"  "e2e edit-readwrite skipped (set EXTER
 optin_gate "tests/e2e/edit-non-git.sh"    "e2e edit-non-git skipped (set EXTERNAL_AGENTS_LIVE=1)"
 rm -rf "$optin_out"
 
+echo "== docs/e2e-recipe.md offline-oracle coverage lock =="
+# This sweep added stub-driven offline coverage of the e2e recipe oracles, so the recipe doc must say
+# so (mirroring the dual-manifest decision lock above) — otherwise it could silently drift back to
+# claiming those oracles are only verifiable against a live CLI.
+if grep -qi 'stub' "$ROOT/docs/e2e-recipe.md" && grep -qF 'oracle logic' "$ROOT/docs/e2e-recipe.md"; then
+  ok "docs/e2e-recipe.md documents the offline stub-driven oracle coverage"
+else
+  bad "docs/e2e-recipe.md documents the offline stub-driven oracle coverage" "doc drifted: missing the stub-driven offline oracle note"
+fi
+
 echo "== shellcheck (regression guard) =="
 if command -v shellcheck >/dev/null 2>&1; then
   # Lint the driver scripts AND the test harness itself — the harness is the largest body of
