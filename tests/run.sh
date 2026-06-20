@@ -252,6 +252,12 @@ assert_contains "agy label-not-found -> fallback" \
   "$(agy_pick '{"models":[]}')" "$FALLBACK"
 assert_contains "agy quota CLI unavailable -> fallback" \
   "$(EXTERNAL_AGENTS_AGY_QUOTA_CMD=false bash "$RUN" --agent agy --effort high --dry-run --prompt x 2>/dev/null)" "$FALLBACK"
+# Graceful degradation (Phase 2.5): an unconfirmable quota must yield the 'unknown' NOTE and the
+# Gemini fallback, and NEVER the unconfirmed primary — deterministic and offline-reproducible.
+deg_out="$(EXTERNAL_AGENTS_AGY_QUOTA_CMD=false bash "$RUN" --agent agy --effort high --dry-run --prompt x 2>/dev/null)"
+deg_note="$(EXTERNAL_AGENTS_AGY_QUOTA_CMD=false bash "$RUN" --agent agy --effort high --dry-run --prompt x 2>&1 >/dev/null)"
+assert_contains "degradation: unconfirmable quota emits the 'unknown' NOTE" "$deg_note" "is unknown"
+case "$deg_out" in *"$PRIMARY"*) bad "degradation: the unconfirmed primary is never selected" "primary '$PRIMARY' resolved without quota confirmation";; *) ok "degradation: the unconfirmed primary is never selected";; esac
 rm -f "$stub"
 
 echo "== transcript secret-redaction (stub agent, real redact path) =="

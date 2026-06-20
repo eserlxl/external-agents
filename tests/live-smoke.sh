@@ -289,6 +289,25 @@ quota_probe() {
     fi
   fi
 
+  # Graceful degradation: when the quota CANNOT be confirmed (CLI absent / unauthenticated /
+  # unparseable) the status must be 'unknown' and the resolved model the Gemini fallback — NEVER
+  # the unconfirmed primary. Forcing the quota command to fail reproduces it deterministically.
+  local fmodel
+  fmodel="$(EXTERNAL_AGENTS_AGY_QUOTA_CMD=false "$RUN" --agent agy --effort high --dry-run --prompt x 2>/dev/null | sed -nE "s/.*--model '?([^']*)'?.*/\1/p" | head -1)"
+  case "$fnote" in
+    *"is unknown"*)
+      if [ -n "$fallback" ] && [ "$fmodel" = "$fallback" ]; then
+        echo "live smoke: agy quota probe  degradation OK: unconfirmable quota -> unknown -> fallback '$fallback'"
+      else
+        echo "live smoke: agy quota probe  FAIL: degraded run did not resolve to the fallback (got '$fmodel')" >&2; rv=1
+      fi;;
+    *)
+      echo "live smoke: agy quota probe  FAIL: forced-unavailable quota did not yield an 'unknown' status" >&2; rv=1;;
+  esac
+  if [ -n "$primary" ] && [ "$fmodel" = "$primary" ]; then
+    echo "live smoke: agy quota probe  FAIL: degraded run spent the unconfirmed primary '$primary'" >&2; rv=1
+  fi
+
   # Schema shape — sanitised evidence (keys/types and array item-key NAMES only; NEVER any
   # percentage value or account identifier) recorded under the transcript dir as a drift
   # detector for the keys agy_model_status reads. An empty CLI output (IDE closed) is recorded
