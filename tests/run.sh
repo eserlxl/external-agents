@@ -260,6 +260,33 @@ assert_contains "degradation: unconfirmable quota emits the 'unknown' NOTE" "$de
 case "$deg_out" in *"$PRIMARY"*) bad "degradation: the unconfirmed primary is never selected" "primary '$PRIMARY' resolved without quota confirmation";; *) ok "degradation: the unconfirmed primary is never selected";; esac
 rm -f "$stub"
 
+echo "== per-agent fan-out record fields (stub fan-out, no live CLI) =="
+# The collect loop builds a control-plane record per agent ($OUT/<a>.record): tab-delimited
+# agent/model/tier/effort/mode/rc/sec/bytes/fallback. Assert the fields for a multi-agent shape
+# using stub agents (no real CLI), including the agy fallback flag and that NO transcript text leaks.
+if command -v timeout >/dev/null 2>&1; then
+  recstub="$(mktemp -d)"
+  for b in agy codex cursor-agent; do printf '#!/usr/bin/env bash\necho "stub response"\n' >"$recstub/$b"; chmod +x "$recstub/$b"; done
+  rectgt="$(mktemp -d)"; recodir="$(mktemp -d)"
+  PATH="$recstub:$PATH" EXTERNAL_AGENTS_OUT="$recodir" \
+    bash "$RUN" --agent all --effort high --read-only --target "$rectgt" --prompt x >/dev/null 2>&1
+  recproj="$recodir/$(basename "$rectgt")"
+  codex_rec="$(tr '\t' '|' <"$recproj/codex.record" 2>/dev/null)"
+  assert_contains "record: codex agent field"  "$codex_rec" "codex|"
+  assert_contains "record: codex tier=high"     "$codex_rec" "|high|"
+  assert_contains "record: codex mode=readonly" "$codex_rec" "|readonly|"
+  case "$codex_rec" in *"|0") ok "record: codex fallback-taken=0";; *) bad "record: codex fallback-taken=0" "got [$codex_rec]";; esac
+  agy_rec="$(tr '\t' '|' <"$recproj/agy.record" 2>/dev/null)"
+  case "$agy_rec" in *"|1") ok "record: agy fallback-taken=1 at the high tier (IDE closed)";; *) bad "record: agy fallback-taken=1 at the high tier" "got [$agy_rec]";; esac
+  case "$agy_rec" in *"stub response"*) bad "record: control-plane only (no transcript text)" "transcript leaked into the record";; *) ok "record: control-plane only (no transcript text)";; esac
+  # A multi-agent shape yields one record per enabled agent.
+  recn=0; for a in agy codex cursor; do [ -f "$recproj/$a.record" ] && recn=$((recn + 1)); done
+  assert_exit "record: one record per fan-out agent (3)" 3 "$recn"
+  rm -rf "$recstub" "$rectgt" "$recodir"
+else
+  printf '  skip per-agent record test (timeout unavailable)\n'
+fi
+
 echo "== transcript secret-redaction (stub agent, real redact path) =="
 # run_stub_transcript TEXT FILEVAR -> stdout = the driver's echoed (redacted) transcript;
 # the persisted (redacted) transcript file content is written to the path FILEVAR (a disk
