@@ -701,6 +701,11 @@ if [ "${#RUN[@]}" -gt 1 ]; then
   # On a write fan-out every agent shares ONE target tree, so the post-write git verification
   # below is TARGET-WIDE — it cannot attribute a change to a specific agent. Say so explicitly.
   [ "$MODE" = "write" ] && echo "  note: write fan-out — the 'git changes after write' block is target-wide (all agents share one tree), not per-agent attribution."
+  # Deterministic outcome agreement from the per-agent success tally (all-ok / mixed / all-fail).
+  # This is an OUTCOME signal, not semantic content agreement (which needs a confirmed schema).
+  if [ "$fail" -eq 0 ]; then echo "  agreement: all-ok ($ok/$((ok + fail)) agents succeeded)"
+  elif [ "$ok" -eq 0 ]; then echo "  agreement: all-fail (0/$((ok + fail)) agents succeeded)"
+  else echo "  agreement: mixed ($ok ok, $fail failed)"; fi
   echo
 fi
 # After a write run, PRODUCE the verification (not just recommend it): show what

@@ -278,6 +278,9 @@ summary adds a note that the post-write `git changes after write` block is **tar
 agents share one tree), so a change can't be attributed to a single agent. Single-agent runs print no
 summary.
 
+The summary closes with a deterministic **agreement** line derived from the success tally —
+`all-ok`, `mixed`, or `all-fail` — so a caller gets an at-a-glance outcome signal for the fan-out.
+
 ## Safety
 
 For the full trust-boundary analysis and the per-CLI enforcement matrix, see
