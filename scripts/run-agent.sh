@@ -664,11 +664,22 @@ done
 for p in "${PIDS[@]}"; do wait "$p"; done
 
 # --- collect: echo every transcript to stdout, summarise to stderr ----------------
+# RECORDS[] holds one per-agent result record (tab-delimited control-plane facts:
+# agent, model, tier, effort, mode, rc, sec, bytes, fallback), built ONLY from values already
+# resolved at launch/collect time — run_one's .model/.fallback sidecars, the config, and the run
+# files — never from the transcript. The summary/JSON views render these.
 ok=0; fail=0
+RECORDS=()
 for a in "${RUN[@]}"; do
   rc="$(cat "$OUT/$a.rc" 2>/dev/null || echo '?')"
   sec="$(cat "$OUT/$a.sec" 2>/dev/null || echo '?')"
   bytes=$(wc -c <"$OUT/$a.md" 2>/dev/null | tr -d ' ')
+  rmodel="$(cat "$OUT/$a.model" 2>/dev/null)"
+  rfb="$(cat "$OUT/$a.fallback" 2>/dev/null)"; [ -n "$rfb" ] || rfb=0
+  reff="$(cfg effort "$a" "$TIER")"
+  rec="$a"$'\t'"${rmodel:-(cli default)}"$'\t'"${TIER:-(none)}"$'\t'"${reff:-(none)}"$'\t'"$MODE"$'\t'"$rc"$'\t'"$sec"$'\t'"${bytes:-0}"$'\t'"$rfb"
+  RECORDS+=("$rec")
+  printf '%s\n' "$rec" >"$OUT/$a.record"
   echo "===== $a (rc=$rc ${sec}s ${bytes:-0} bytes) ====="
   cat "$OUT/$a.md" 2>/dev/null
   if [ "$rc" != "0" ] || [ "${bytes:-0}" -lt 1 ]; then
