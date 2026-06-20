@@ -41,6 +41,9 @@ while [ $# -gt 0 ]; do
   esac
 done
 SMOKE_PROMPT="${EXTERNAL_AGENTS_LIVE_PROMPT:-Reply with the single word: ok}"
+# Each argv-coverage run only needs run_one's pre-launch argv record, so a short timeout
+# keeps the (mode x prompt-source) matrix light while still exercising the real run path.
+SMOKE_TIMEOUT="${EXTERNAL_AGENTS_LIVE_TIMEOUT:-60}"
 
 # live_argv_record OUTDIR AGENT — print the masked launch-argv record run_one writes for
 # AGENT under OUTDIR ($OUTDIR/<agent>.argv): the resolved argv with the prompt shown as
@@ -49,25 +52,38 @@ live_argv_record() {
   cat "$1/$2.argv" 2>/dev/null
 }
 
-# argv_equiv AGENT — prove the LIVE launch argv matches what --dry-run shows. One live
-# read-only run against a throwaway target makes run_one write the masked argv record;
-# that record must be byte-identical to the --dry-run argv for the same invocation. The
-# record never holds the prompt (it is masked), so this is a content-free correctness
-# check. Prints a clear per-agent pass/fail line; returns non-zero on mismatch.
-argv_equiv() {  # agent
-  local a="$1" tgt out rec dry
+# argv_equiv AGENT MODE SRC — prove the LIVE launch argv matches what --dry-run shows for
+# ONE (mode, prompt-source) pair, so every build_argv resolution path is covered:
+#   MODE = read-only | read-write   (--read-only enforced argv vs --write argv)
+#   SRC  = prompt | prompt-file      (literal --prompt vs --prompt-file resolution)
+# One live run against a throwaway target makes run_one write the masked argv record; that
+# record must be byte-identical to the --dry-run argv for the same invocation. The record
+# never holds the prompt (it is masked) — and --prompt vs --prompt-file resolve to the SAME
+# masked argv — so this is a content-free correctness check across all paths. A write run
+# uses a disposable, non-cwd target with --yes. Returns non-zero on mismatch.
+argv_equiv() {  # agent mode src
+  local a="$1" mode="$2" src="$3" tgt out rec dry pf modeflag
   tgt="$(mktemp -d)"; out="$(mktemp -d)"
-  EXTERNAL_AGENTS_OUT="$out" "$RUN" --agent "$a" --read-only --target "$tgt" \
-    --prompt "$SMOKE_PROMPT" >/dev/null 2>&1
+  case "$mode" in read-write) modeflag=--write;; *) modeflag=--read-only;; esac
+  local yes=(); [ "$mode" = "read-write" ] && yes=(--yes)
+  local pargs=()
+  if [ "$src" = "prompt-file" ]; then
+    pf="$(mktemp)"; printf '%s' "$SMOKE_PROMPT" >"$pf"; pargs=(--prompt-file "$pf")
+  else
+    pargs=(--prompt "$SMOKE_PROMPT")
+  fi
+  EXTERNAL_AGENTS_OUT="$out" "$RUN" --agent "$a" "$modeflag" "${yes[@]}" \
+    --target "$tgt" --timeout "$SMOKE_TIMEOUT" "${pargs[@]}" >/dev/null 2>&1
   rec="$(live_argv_record "$out/$(basename "$tgt")" "$a")"
-  dry="$("$RUN" --agent "$a" --read-only --target "$tgt" --dry-run \
-    --prompt "$SMOKE_PROMPT" 2>/dev/null | sed -nE "s/^  $a +//p")"
+  dry="$("$RUN" --agent "$a" "$modeflag" "${yes[@]}" --target "$tgt" --dry-run \
+    "${pargs[@]}" 2>/dev/null | sed -nE "s/^  $a +//p")"
+  [ "$src" = "prompt-file" ] && rm -f "$pf"
   rm -rf "$tgt" "$out"
   if [ -n "$rec" ] && [ "$rec" = "$dry" ]; then
-    echo "live smoke: $a  live argv == dry-run argv"
+    echo "live smoke: $a [$mode/$src]  live argv == dry-run argv"
     return 0
   fi
-  echo "live smoke: $a  FAIL: live argv != dry-run argv (live=[$rec] dry=[$dry])" >&2
+  echo "live smoke: $a [$mode/$src]  FAIL: live argv != dry-run argv (live=[$rec] dry=[$dry])" >&2
   return 1
 }
 
@@ -105,15 +121,20 @@ if [ "${#verify[@]}" -eq 0 ]; then
 fi
 echo "live smoke: verifying ${verify[*]}"
 
-# Per-agent live checks. Phase 2.2 verifies argv equivalence; non-mutation and
-# transcript-success checks are added by the later Phase 2 sub-phases.
+# Per-agent live checks. Phase 2.2 verifies argv equivalence across every (mode,
+# prompt-source) build_argv path; non-mutation and transcript-success checks are added
+# by the later Phase 2 sub-phases.
 fails=0
 for a in "${verify[@]}"; do
-  argv_equiv "$a" || fails=$((fails + 1))
+  for mode in read-only read-write; do
+    for src in prompt prompt-file; do
+      argv_equiv "$a" "$mode" "$src" || fails=$((fails + 1))
+    done
+  done
 done
 if [ "$fails" -gt 0 ]; then
-  echo "live smoke: $fails agent(s) failed argv equivalence" >&2
+  echo "live smoke: $fails (agent, mode, prompt-source) case(s) failed argv equivalence" >&2
   exit 1
 fi
-echo "live smoke: argv equivalence verified for ${verify[*]}"
+echo "live smoke: argv equivalence verified for ${verify[*]} (read-only+read-write x prompt+prompt-file)"
 exit 0
