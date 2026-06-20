@@ -166,6 +166,22 @@ argv_equiv() {  # agent mode src
   return 1
 }
 
+# transcript_ok OUTDIR AGENT — the run is a transcript SUCCESS only when the agent exited 0
+# AND produced a non-empty (redacted) transcript, mirroring the driver's own collect-loop ok
+# criterion (rc==0 && bytes>0). This observes that the CLI actually ran and responded rather
+# than assuming it. Reports rc and bytes; returns 0 on success, 1 otherwise.
+transcript_ok() {  # outdir agent
+  local proj="$1" a="$2" rc bytes
+  rc="$(cat "$proj/$a.rc" 2>/dev/null || echo '?')"
+  bytes=$(wc -c <"$proj/$a.md" 2>/dev/null | tr -d ' '); bytes="${bytes:-0}"
+  if [ "$rc" = "0" ] && [ "$bytes" -gt 0 ]; then
+    echo "live smoke: $a [e2e]  transcript: ok (rc=$rc bytes=$bytes)"
+    return 0
+  fi
+  echo "live smoke: $a [e2e]  transcript: FAIL (rc=$rc bytes=$bytes)" >&2
+  return 1
+}
+
 # smoke_agent AGENT — the composed single-agent end-to-end live smoke: ONE read-only run of
 # AGENT against a fresh disposable sandbox (run_one's mechanics write .argv/.rc/.md), then
 # THREE signals are derived from that ONE run and reported together:
@@ -175,7 +191,7 @@ argv_equiv() {  # agent mode src
 # Returns 0 only when the required signals hold (argv-match + enforced non-mutation); agy's
 # best-effort mutation never fails the pass.
 smoke_agent() {  # agent
-  local a="$1" sb out proj rec dry changes rc bytes rv=0
+  local a="$1" sb out proj rec dry changes rv=0
   sb="$(make_sandbox)" || { echo "live smoke: $a [e2e]  FAIL: could not create sandbox" >&2; return 1; }
   out="$(mktemp -d)"; proj="$out/$(basename "$sb")"
   EXTERNAL_AGENTS_OUT="$out" "$RUN" --agent "$a" --read-only --target "$sb" \
@@ -191,10 +207,8 @@ smoke_agent() {  # agent
   # 2. non-mutation (enforced hard-fail / agy best-effort) from the same sandbox.
   changes="$(tree_changes "$sb")"
   mutation_outcome "$a" "$changes" || rv=1
-  # 3. transcript: rc + bytes from the run's artifacts (strict pass added by the next sub-phase).
-  rc="$(cat "$proj/$a.rc" 2>/dev/null || echo '?')"
-  bytes=$(wc -c <"$proj/$a.md" 2>/dev/null | tr -d ' ')
-  echo "live smoke: $a [e2e]  transcript: rc=$rc bytes=${bytes:-0}"
+  # 3. transcript success: the CLI ran and responded (rc==0 && bytes>0).
+  transcript_ok "$proj" "$a" || rv=1
   rm -rf "$sb" "$out"
   return "$rv"
 }
