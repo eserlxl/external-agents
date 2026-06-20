@@ -584,9 +584,9 @@ best-effort, and **never fails** on a change — agy is never over-claimed as en
 
 **Recorded evidence.** Each armed run composes one end-to-end read-only run per reachable agent
 (argv-match + non-mutation + a successful transcript) and writes a deterministic per-agent status
-record to `$EXTERNAL_AGENTS_OUT/live-smoke/status.txt` — one `<agent>  <status>` line
-(`live-verified` / `skipped-not-reachable` / `skipped-scoped-out` / `skipped-not-opted-in`) — so
-which agents are live-verified in the current environment is auditable. The driver's per-agent
+record to `$EXTERNAL_AGENTS_OUT/live-smoke/status.txt` — one `<agent>  <status>` line (the full
+**status vocabulary** is defined below) — so which agents are live-verified in the current
+environment is auditable. The driver's per-agent
 transcripts and masked argv records land under the same transcript dir (default
 `~/.external-agents/logs/<project>`, overridable with `EXTERNAL_AGENTS_OUT`). To reproduce:
 
@@ -594,6 +594,27 @@ transcripts and masked argv records land under the same transcript dir (default
 EXTERNAL_AGENTS_LIVE=1 bash tests/live-smoke.sh        # run, then inspect:
 cat "${EXTERNAL_AGENTS_OUT:-$HOME/.external-agents/logs}"/live-smoke/status.txt
 ```
+
+**Status vocabulary.** Each `<agent>  <status>` line carries exactly one token. What each asserts —
+and, crucially, what it does **not**:
+
+- `live-verified` — the agent round-tripped **at record time**: its launch argv matched `--dry-run`,
+  the read-only run left the disposable sandbox unchanged (best-effort for `agy`), and it produced a
+  successful (`rc=0`, non-empty) transcript. It does **not** assert the agent always works — a later
+  auth, quota, or CLI change can break a previously verified agent, so re-run the harness to refresh.
+- `failed` — the agent was reachable and checked, but a check failed (argv mismatch, an *enforced*
+  agent mutated the tree, or a non-zero/empty transcript). A real, actionable failure.
+- `reachable` — the CLI was found on `PATH` but no terminal verdict was assigned (an intermediate
+  state, normally overwritten by `live-verified` / `failed` / `skipped-scoped-out`).
+- `skipped-not-reachable` — armed for, but the CLI is not installed on `PATH`; skipped, never a failure.
+- `skipped-scoped-out` — reachable, but excluded by an `--agent <name>` scope this run; not verified.
+- `skipped-not-opted-in` — the harness was **not armed** (`EXTERNAL_AGENTS_LIVE` unset/`0`); no live
+  work ran for any agent.
+- `unknown` — no status was assigned for a known agent (a default guard); it should not appear in a
+  normal armed run.
+
+The honest boundary: a green offline `tests/run.sh` proves the plumbing; only a `live-verified` line
+proves a *real* agent round-tripped — and only as of when that line was written, never "always works".
 
 That transcript dir is **outside the repository** — raw transcripts (which can carry free-text or
 PII) are **never committed**; only the offline, content-free tests live in the repo.

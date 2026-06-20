@@ -165,6 +165,12 @@ So a green offline `tests/run.sh` proves the framework's plumbing **and the reci
 stub agents); only an armed run against an authenticated CLI proves a given *real* agent actually
 round-trips.
 
+The sibling live-smoke harness records a per-agent `status.txt` whose tokens — `live-verified`,
+`failed`, and the `skipped-*` family — are defined in the
+[README status vocabulary](../README.md#live-smoke-opt-in). The same honesty boundary applies to
+these recipes: `live-verified` means a *real* agent round-tripped **at record time**, not that it
+always will, and a green offline gate never implies a green live run.
+
 ## Per-agent reproducibility checklist
 
 To reproduce the full Phase 3 evidence for one agent `<a>`:
