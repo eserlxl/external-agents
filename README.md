@@ -375,6 +375,10 @@ EXTERNAL_AGENTS_LIVE=1 bash tests/e2e/run-e2e.sh                 # all recipes, 
 EXTERNAL_AGENTS_LIVE=1 bash tests/e2e/review-readonly.sh codex   # one recipe, one agent
 ```
 
+The read-write edit recipe confines all writes to the **throwaway fixture** (a non-cwd temp tree
+outside the plugin tree, passed with `--yes`) and asserts the driver's post-write verification block
+names the changed file — nothing in the real repo is ever touched.
+
 ## Files
 
 ```

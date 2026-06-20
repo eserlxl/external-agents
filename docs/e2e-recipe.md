@@ -91,4 +91,32 @@ EXTERNAL_AGENTS_LIVE=1 bash tests/e2e/review-readonly.sh codex   # one agent
 EXTERNAL_AGENTS_LIVE=1 bash tests/e2e/run-e2e.sh                 # all reachable agents, all recipes
 ```
 
-<!-- read-write edit + non-git write sections are appended by the Phase 3.3–3.4 plan items -->
+### Read-write edit (`edit-readwrite.sh`)
+
+Drives each reachable agent through `run-agent.sh` in **read-write** mode with a deterministic
+tiny-edit prompt, proves a real write round-trips, and checks the driver's post-write verification.
+
+- **Prompt:** append one new line whose exact content is `reviewed-ok` (the `E2E_FIXTURE_MARKER`) to
+  `seed.txt` — a reversible, predictable edit (override with `E2E_EDIT_PROMPT`).
+- **Driver argv:** the recipe uses `run-agent.sh --write --yes`, so each agent resolves to its
+  read-write argv — e.g. `codex exec -s workspace-write -C <fixture> --skip-git-repo-check <PROMPT>`,
+  `claude -p <PROMPT> --permission-mode acceptEdits`, `cursor-agent -p --force --trust --workspace
+  <fixture> -- <PROMPT>`, `agy -p <PROMPT> --add-dir <fixture> --dangerously-skip-permissions`.
+- **Expected changed file:** the fixture's post-run `git status --porcelain` is non-empty (the agent
+  made an edit), e.g. ` M seed.txt`.
+- **Expected post-write verification:** the driver PRODUCES, on stdout, the
+  `===== git changes after write (in <fixture>) =====` block with `git status --porcelain` and
+  `git diff --stat` naming the changed file (e.g. `seed.txt | 1 +`). The recipe asserts the block is
+  present and names the actual change.
+- **Fixture handling:** one fixture, reset to its initial commit (`e2e_fixture_reset`) before each
+  agent — so every run starts identically and the diff stays predictable.
+- **Safety gates:** writes are confined to the **throwaway fixture** (a non-cwd temp tree, passed
+  with `--yes`); the driver refuses to write inside or above the plugin tree, and the fixture is
+  always created under `$TMPDIR`, outside the plugin tree. Nothing in the real repo is ever touched.
+- **Opt-in/skip:** unset `EXTERNAL_AGENTS_LIVE` → the recipe prints a skip line and exits 0.
+
+```bash
+EXTERNAL_AGENTS_LIVE=1 bash tests/e2e/edit-readwrite.sh codex    # one agent
+```
+
+<!-- non-git write section is appended by the Phase 3.4 plan items -->
