@@ -45,6 +45,19 @@ Three layers, one rule:
 prompt construction are all enforced in `run-agent.sh`, so they hold no matter how the script is
 invoked — never relocate a gate up into the skill or command.
 
+## Packaging contract (install-critical manifest fields)
+
+`.claude-plugin/plugin.json` must carry the metadata a host needs to **load** the plugin. These
+**install-critical** fields are a contract: the packaging oracle in `tests/run.sh`
+(`MANIFEST_REQUIRED_FIELDS`) asserts each is present and non-empty, and a negative-path test proves
+that removing one fails the offline suite. The set is:
+
+<!-- install-critical-manifest-fields = name,version,description,homepage,repository,license -->
+`name`, `version`, `description`, `homepage`, `repository`, `license`.
+
+Keep this list and `MANIFEST_REQUIRED_FIELDS` in sync — a set-parity check in `tests/run.sh` fails if
+they drift apart.
+
 ## Secret & safety discipline (must always hold)
 
 These are standing policies a contribution must uphold; each is enforced at a specific gate in

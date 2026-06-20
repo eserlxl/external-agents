@@ -1017,6 +1017,34 @@ else
   bad "packaging: manifest version equals the lockstep version" "plugin.json=$pkg_pv_py SKILL.md=$pkg_sv"
 fi
 
+echo "== manifest field-contract (negative path + CONTRIBUTING.md set parity) =="
+# MANIFEST_REQUIRED_FIELDS (the packaging oracle's single source) is the install-critical contract.
+# (a) Prove the oracle CATCHES a removed field: drop one from a copy of plugin.json and assert the
+# gap check flags it. (b) Prove CONTRIBUTING.md documents EXACTLY that set (machine-readable marker)
+# so the doc and the test cannot drift apart.
+mf_tmp="$(mktemp)"
+python3 -c 'import json,sys; d=json.load(open(sys.argv[1])); d.pop("homepage",None); json.dump(d,open(sys.argv[2],"w"))' "$MANIFEST" "$mf_tmp" 2>/dev/null
+mf_gap=""
+for k in "${MANIFEST_REQUIRED_FIELDS[@]}"; do
+  v="$(python3 -c 'import json,sys; d=json.load(open(sys.argv[1])); val=d.get(sys.argv[2]); print("ok" if val not in (None,"") else "")' "$mf_tmp" "$k" 2>/dev/null)"
+  [ "$v" = "ok" ] || mf_gap="$mf_gap $k"
+done
+rm -f "$mf_tmp"
+case " $mf_gap " in
+  *" homepage "*) ok "manifest field-contract: removing a required field is caught (homepage flagged)";;
+  *)              bad "manifest field-contract: removing a required field is caught" "gap='$mf_gap'";;
+esac
+# Set parity: the CONTRIBUTING.md marker must list exactly MANIFEST_REQUIRED_FIELDS.
+mf_doc="$(sed -nE 's/.*install-critical-manifest-fields = ([a-z,]+).*/\1/p' "$ROOT/CONTRIBUTING.md" | head -1)"
+mf_doc_sorted="$(printf '%s' "$mf_doc" | tr ',' '\n' | grep -v '^$' | sort -u)"
+mf_src_sorted="$(printf '%s\n' "${MANIFEST_REQUIRED_FIELDS[@]}" | sort -u)"
+if [ -n "$mf_doc_sorted" ] && [ "$mf_doc_sorted" = "$mf_src_sorted" ]; then
+  ok "manifest field-contract: CONTRIBUTING.md lists exactly the required field set"
+else
+  bad "manifest field-contract: CONTRIBUTING.md lists exactly the required field set" \
+      "doc=[$(printf '%s' "$mf_doc_sorted" | paste -sd' ' -)] src=[$(printf '%s' "$mf_src_sorted" | paste -sd' ' -)]"
+fi
+
 echo "== dual-manifest decision lock (bumper references no .codex-plugin) =="
 # Phase 7.1 removed the dead .codex-plugin/plugin.json reference — the repo ships only
 # .claude-plugin/plugin.json. Lock that decision with a grep regression guard (mirroring the
