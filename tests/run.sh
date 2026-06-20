@@ -268,6 +268,33 @@ else
   skip "fixture-agent record/index/argv oracle (timeout/python3 unavailable)"
 fi
 
+echo "== policy-decoupling guard (generic policy functions are agent-agnostic; registry is authoritative) =="
+# The registry (ADAPTER_AGENTS/BIN/ENFORCEMENT) is the single authoritative agent set. The GENERIC
+# policy functions — the dispatcher, the agy quota helper, redaction, and the record emitters — must
+# NOT hard-code the four agent names, or a registry-declared agent would be silently excluded. (The
+# per-agent argv builders and extract_signal's signal-capability hook are intentionally per-agent.)
+# The guard fails if any of these functions regains a four-agent literal.
+pd_src="$ROOT/scripts/run-agent.sh"
+pd_body() { awk -v fn="$1() {" 'index($0,fn)==1{f=1} f{print} f&&/^}/{exit}' "$pd_src"; }
+pd_bad=""
+for fn in build_argv agy_model_status redact write_meta_json append_index_row; do
+  if pd_body "$fn" | grep -qE 'agy\|codex\|claude\|cursor|\(agy codex claude cursor'; then
+    pd_bad="$pd_bad $fn"
+  fi
+done
+if [ -z "$pd_bad" ]; then
+  ok "policy-decoupling: dispatcher / quota / redaction / record emitters are agent-agnostic"
+else
+  bad "policy-decoupling: generic policy functions are agent-agnostic" "four-agent literal in:$pd_bad"
+fi
+# The agent-set array literal lives in exactly ONE place — the ADAPTER_AGENTS registry declaration.
+pd_reg="$(grep -cE '^ADAPTER_AGENTS=\(agy codex claude cursor\)' "$pd_src")"
+if [ "$pd_reg" = "1" ]; then
+  ok "policy-decoupling: the agent-set array literal lives once, in the ADAPTER_AGENTS registry"
+else
+  bad "policy-decoupling: the agent-set array literal lives once, in the ADAPTER_AGENTS registry" "ADAPTER_AGENTS count: $pd_reg"
+fi
+
 echo "== agents.json schema validation (draft-07 contract) =="
 if python3 -c 'import jsonschema' 2>/dev/null; then
   # schema_check FILE -> "OK" if FILE validates against schema/agents.schema.json, else "REJECTED".
