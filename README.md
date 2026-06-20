@@ -133,6 +133,28 @@ only** — no key or token value belongs in any committed file.
 Readiness is always an explicit, opt-in act: the offline gate verifies **presence** only (via
 `--check`) and never performs any of the auth steps above.
 
+### Confirm an agent is usable: presence → ready
+
+Two tiers, run in order, to know an agent will actually work:
+
+1. **Presence (offline).** `bash scripts/run-agent.sh --agent <name> --check` — exits **non-zero** if
+   the CLI (or the `cursor-agent` binary the `cursor` agent needs) is missing, `0` when present. This
+   never authenticates or makes a network call.
+2. **Readiness (opt-in).** After the one-time auth step above, arm the live smoke and read the
+   per-agent verdict:
+
+   ```bash
+   EXTERNAL_AGENTS_LIVE=1 bash tests/live-smoke.sh --agent <name>
+   cat "${EXTERNAL_AGENTS_OUT:-$HOME/.external-agents/logs}"/live-smoke/status.txt
+   ```
+
+   A `<name>  live-verified` line means the agent round-tripped (ready); `failed` or
+   `skipped-not-reachable` mean it is not. The [Live smoke](#live-smoke-opt-in) section defines the
+   full status vocabulary.
+
+The required offline gate runs **only** step 1's presence check and **never** performs step 2's auth
+step — readiness is always an explicit, opt-in act.
+
 ## Usage
 
 Natural language (skill):
