@@ -1,36 +1,45 @@
 # Extending external-agents: adding an agent
 
-This is the **adapter touch-point inventory** — every place in the driver (`scripts/run-agent.sh`) an
-added agent must be wired **today**. Line references are anchored to the current version; the Phase 9.2
-**declarative adapter registry** consolidates these touch-points behind one boundary, after which this
-document is updated to describe the registry rather than the scattered call sites.
+Since Phase 9.2 the driver (`scripts/run-agent.sh`) routes every per-agent decision through a single
+**declarative adapter registry**, so adding an agent is a small, localized change rather than edits
+scattered across the driver. This document describes that boundary; the exact step-by-step is in the
+add-an-agent walkthrough (below, added in Phase 9.3).
 
-## Driver touch-points an added agent requires today
+## The adapter registry boundary
 
-| # | Touch-point | Where (`scripts/run-agent.sh`) | What it does |
-|---|-------------|--------------------------------|--------------|
-| 1 | `build_argv` per-agent case | `build_argv` at `:548` (agy `:556`, codex `:575`, claude `:581`, cursor `:588`) | Builds the agent's read-only / write argv, prompt index, and resolved model |
-| 2 | `agent_bin` mapping | `:292` | Maps the agent name to its CLI binary (e.g. `cursor` → `cursor-agent`) |
-| 3 | Single-agent allow-list | `:456` | The `--agent <name>` validation (`case "$AGENT" in agy\|codex\|claude\|cursor)`) |
-| 4 | `--check` candidate list | `:370` | The agents the presence preflight probes |
-| 5 | `--discover` candidate list | `:409` | The agents the machine-readable reachable-set lists |
-| 6 | Read-only enforcement argv | within `build_argv` (agy `--sandbox` `:557`, codex `-s read-only` `:575`, claude `--allowedTools` `:581`, cursor `--mode plan` `:591`) | The per-agent read-only mechanism, mirrored in the [threat-model matrix](threat-model.md#per-cli-read-only-enforcement-matrix) |
+Per-agent facts live in ONE place near the top of the driver:
 
-A seventh hard-coded four-agent literal lives in the signal extractor
-(`extract_signal` at `:686`, `case "$agent" in agy|codex|claude|cursor`), which gates cost/latency
-parsing per agent.
+| Registry member | Kind | What it holds |
+|------------------|------|---------------|
+| `ADAPTER_AGENTS` | ordered list | the known agent set, in canonical order — drives the allow-list and the `--check` / `--discover` candidate sets |
+| `ADAPTER_BIN` | name → binary | the CLI binary each agent maps to (e.g. `cursor` → `cursor-agent`); `agent_bin` derives from it |
+| `ADAPTER_ENFORCEMENT` | name → class | the read-only enforcement class (`enforced` / `best-effort`), tied to the [threat-model matrix](threat-model.md#per-cli-read-only-enforcement-matrix) by the enforcement-class doc-drift guard |
+| `argv_<agent>` | function | the thin per-CLI argv builder — the read-only/write argv shape and the prompt index |
 
-## Config side
+Everything else is **derived** from the registry, no longer hand-maintained at scattered call sites:
 
-Beyond the driver, an added agent needs its tier → (model, optional native effort, optional agy-only
-fallback) entry in [`agents.json`](../agents.json), validated by
-[`schema/agents.schema.json`](../schema/agents.schema.json) (which already accepts new agents via
-`additionalProperties`).
+- `agent_bin` ← `ADAPTER_BIN`;
+- the single-agent allow-list, the `--check` candidate set, and the `--discover` candidate set ← `ADAPTER_AGENTS`;
+- the best-effort read-only NOTE ← `ADAPTER_ENFORCEMENT`;
+- `build_argv` validates membership against `ADAPTER_BIN` and dispatches to `argv_<agent>`.
 
-## Why this is the baseline for Phase 9.2
+`agy`'s quota-aware fallback stays a **control-plane policy** in `build_argv` (consulted once before the
+dispatch), never duplicated per adapter.
 
-Adding an agent today means editing **six-plus** scattered driver locations that must stay in sync — a
-silent-drift surface where forgetting one (e.g. the `--discover` list) leaves the agent half-wired. The
-Phase 9.2 declarative adapter registry consolidates touch-points 1–6 (and the signal-extractor literal)
-behind one boundary, so an agent is added **without touching policy code** — the property Phase 9.3's
-fixture-agent oracle then proves.
+The documented read-only / write argv shapes in the `scripts/run-agent.sh` header comment correspond
+exactly to what the `argv_<agent>` builders emit; the offline registry-argv parity oracle asserts they
+stay byte-identical across the jq and python3 config backends.
+
+## What adding an agent touches
+
+Two edits, no policy code:
+
+1. **A registry entry** in `scripts/run-agent.sh`: add the name to `ADAPTER_AGENTS`, its binary to
+   `ADAPTER_BIN`, its read-only enforcement class to `ADAPTER_ENFORCEMENT`, and a thin `argv_<agent>`
+   builder for its argv shape.
+2. **An `agents.json` block**: the agent's tier → (model, optional native effort, optional agy-only
+   fallback) map, which `schema/agents.schema.json` already accepts via `additionalProperties`.
+
+No edit to `agent_bin`, the allow-list, the `--check`/`--discover` candidate lists, or the safety
+gates — they all derive from the registry. The threat-model matrix row (and its enforcement class)
+should be added too, so the enforcement-class doc-drift guard stays green.

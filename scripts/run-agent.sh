@@ -37,6 +37,12 @@
 #
 #   (agy and claude run with cwd=DIR; codex takes -C DIR; cursor takes --workspace DIR.)
 #
+#   Each shape above is produced by a thin per-agent argv builder (argv_<agent>) dispatched from the
+#   declarative adapter registry (ADAPTER_AGENTS / ADAPTER_BIN / ADAPTER_ENFORCEMENT; Phase 9.2). The
+#   agent set, agent_bin, the allow-list, the --check/--discover candidates, and the best-effort NOTE
+#   all DERIVE from that registry — adding an agent is a registry entry + a builder, never an edit to
+#   an inline per-agent case (there is none). See docs/extensibility.md.
+#
 # EFFORT TIERS.  The caller picks ONE semantic effort level — low | medium | high |
 # xhigh — and agents.json maps that tier to the right (model, native effort) for
 # EACH agent. So a single `--effort high` resolves, per agent, to e.g.:
