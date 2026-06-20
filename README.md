@@ -451,6 +451,10 @@ durably to disk for *every* run. The post-fallback rule is decisive: for an agy 
 primary). Like the fan-out record, it is built **only** from values resolved at launch/collect time —
 **never parsed from the transcript** — so it carries no agent free-text and no prompt.
 
+The record's field set and JSON types are published as a draft-07 contract in
+[`schema/run-record.schema.json`](schema/run-record.schema.json), which validates both this
+`meta.json` record and the [run index](#run-index) row.
+
 **Where it lives.** The record is written to `<transcript-dir>/<agent>.meta.json` — the *same*
 per-project directory as that agent's transcript (default `~/.external-agents/logs/<project>`,
 overridable via [`--out`](#options) or the `EXTERNAL_AGENTS_OUT` base). One file per agent per run,

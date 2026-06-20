@@ -1,0 +1,69 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://github.com/eserlxl/external-agents/schema/run-record.schema.json",
+  "title": "external-agents run record",
+  "description": "Contract for the per-run records scripts/run-agent.sh emits: the per-run meta.json record (write_meta_json) and the index.jsonl row (append_index_row = the record augmented with run_id/project). Control-plane facts only — never transcript text or the prompt. Evolution is additive-only: existing fields are never renamed, retyped, or dropped without a major version bump; new fields may be added (see docs/run-record-contract.md).",
+  "oneOf": [
+    {
+      "title": "meta.json record",
+      "description": "One per-run metadata record (no run_id / project).",
+      "allOf": [{ "$ref": "#/definitions/record" }],
+      "not": { "required": ["run_id"] }
+    },
+    {
+      "title": "index.jsonl row",
+      "description": "One run-index row: the record augmented with the fan-out run_id and the project namespace.",
+      "allOf": [{ "$ref": "#/definitions/record" }],
+      "required": ["run_id", "project"],
+      "properties": {
+        "run_id": {
+          "type": "string",
+          "description": "Groups every agent of one fan-out under a single id."
+        },
+        "project": {
+          "type": "string",
+          "description": "The project namespace the run was recorded under."
+        }
+      }
+    }
+  ],
+  "definitions": {
+    "record": {
+      "type": "object",
+      "description": "The per-run metadata record. Each value is the post-fallback resolved truth (what was actually used), built only from values resolved at launch/collect — never parsed from the transcript.",
+      "required": [
+        "agent", "model", "tier", "effort", "mode", "target",
+        "rc", "sec", "bytes", "fallback", "timestamp", "signals"
+      ],
+      "properties": {
+        "agent":     { "type": "string", "description": "The agent name (agy/codex/claude/cursor, or a registered agent)." },
+        "model":     { "type": "string", "description": "The resolved model actually used (post-fallback for agy)." },
+        "tier":      { "type": "string", "description": "The effort tier (low|medium|high|xhigh)." },
+        "effort":    { "type": "string", "description": "The tier's native effort, or '(none)' if unset." },
+        "mode":      { "type": "string", "description": "readonly or write." },
+        "target":    { "type": "string", "description": "The resolved directory the agent worked in." },
+        "rc":        { "type": ["integer", "string"], "description": "The agent process exit code (number; raw string only if non-numeric)." },
+        "sec":       { "type": ["number", "string"], "description": "Wall-clock seconds (number; raw string only if non-numeric)." },
+        "bytes":     { "type": ["integer", "string"], "description": "Redacted transcript size in bytes (number; raw string only if non-numeric)." },
+        "fallback":  { "type": "boolean", "description": "true iff the agy quota fallback swapped the primary model." },
+        "timestamp": { "type": "string", "description": "Run launch time, UTC ISO-8601 (e.g. 2026-06-20T12:00:00Z)." },
+        "signals":   { "$ref": "#/definitions/signals" }
+      }
+    },
+    "signals": {
+      "type": "object",
+      "description": "Best-effort, CLI-self-reported cost/usage signals — NOT billing-grade. The literal string 'unavailable' means no signal was recognized (never a fabricated number).",
+      "required": ["tokens", "cost"],
+      "properties": {
+        "tokens": {
+          "type": ["integer", "string"],
+          "description": "A numeric token count, or the literal string 'unavailable'."
+        },
+        "cost": {
+          "type": "string",
+          "description": "The cost string kept verbatim (e.g. '$0.12'), or the literal string 'unavailable'."
+        }
+      }
+    }
+  }
+}
