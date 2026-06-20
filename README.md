@@ -335,6 +335,22 @@ hard write barrier), the harness only **reports** whether the tree changed, expl
 best-effort, and **never fails** on a change — agy is never over-claimed as enforced, matching the
 [per-CLI enforcement matrix](docs/threat-model.md#per-cli-read-only-enforcement-matrix).
 
+**Recorded evidence.** Each armed run composes one end-to-end read-only run per reachable agent
+(argv-match + non-mutation + a successful transcript) and writes a deterministic per-agent status
+record to `$EXTERNAL_AGENTS_OUT/live-smoke/status.txt` — one `<agent>  <status>` line
+(`live-verified` / `skipped-not-reachable` / `skipped-scoped-out` / `skipped-not-opted-in`) — so
+which agents are live-verified in the current environment is auditable. The driver's per-agent
+transcripts and masked argv records land under the same transcript dir (default
+`~/.external-agents/logs/<project>`, overridable with `EXTERNAL_AGENTS_OUT`). To reproduce:
+
+```bash
+EXTERNAL_AGENTS_LIVE=1 bash tests/live-smoke.sh        # run, then inspect:
+cat "${EXTERNAL_AGENTS_OUT:-$HOME/.external-agents/logs}"/live-smoke/status.txt
+```
+
+That transcript dir is **outside the repository** — raw transcripts (which can carry free-text or
+PII) are **never committed**; only the offline, content-free tests live in the repo.
+
 ## Files
 
 ```
