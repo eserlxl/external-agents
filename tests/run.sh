@@ -958,6 +958,65 @@ else
   skip "release tag-gate oracle (git/python3 unavailable)"
 fi
 
+echo "== plugin packaging oracle (required files + manifest fields + version lockstep; offline) =="
+# A release must ship a LOADABLE plugin, not just a working driver. Assert the install-critical
+# files exist, that .claude-plugin/plugin.json parses under BOTH jq and python3 (dual-backend
+# parity, mirroring the agents.json schema block), that every required manifest field is present
+# and non-empty, and that the manifest version equals the lockstep version. Offline, no CLI.
+# MANIFEST_REQUIRED_FIELDS is the SINGLE SOURCE of the install-critical field set, shared by the
+# distribution-manifest oracle and the field-contract negative-path assertion below so they cannot drift.
+MANIFEST="$ROOT/.claude-plugin/plugin.json"
+MANIFEST_REQUIRED_FIELDS=(name version description homepage repository license)
+pkg_required_files=(
+  ".claude-plugin/plugin.json"
+  "commands/external-agents.md"
+  "skills/external-agents/SKILL.md"
+  "scripts/run-agent.sh"
+  "agents.json"
+  "schema/agents.schema.json"
+)
+pkg_missing=""
+for f in "${pkg_required_files[@]}"; do
+  [ -f "$ROOT/$f" ] || pkg_missing="$pkg_missing $f"
+done
+if [ -z "$pkg_missing" ]; then
+  ok "packaging: all required plugin files present"
+else
+  bad "packaging: all required plugin files present" "missing:$pkg_missing"
+fi
+# Dual-backend parse parity: both jq and python3 must read the same manifest version.
+pkg_pv_py="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["version"])' "$MANIFEST" 2>/dev/null)"
+assert_exit "packaging: plugin.json parses under python3" 0 "$?"
+if command -v jq >/dev/null 2>&1; then
+  pkg_pv_jq="$(jq -r .version "$MANIFEST" 2>/dev/null)"
+  assert_exit "packaging: plugin.json parses under jq" 0 "$?"
+  if [ "$pkg_pv_py" = "$pkg_pv_jq" ]; then
+    ok "packaging: jq and python3 read the same manifest version"
+  else
+    bad "packaging: jq and python3 read the same manifest version" "py=$pkg_pv_py jq=$pkg_pv_jq"
+  fi
+else
+  skip "packaging: jq parse parity (jq unavailable)"
+fi
+# Every required field present and non-empty.
+pkg_field_gap=""
+for k in "${MANIFEST_REQUIRED_FIELDS[@]}"; do
+  v="$(python3 -c 'import json,sys; d=json.load(open(sys.argv[1])); val=d.get(sys.argv[2]); print("ok" if val not in (None,"") else "")' "$MANIFEST" "$k" 2>/dev/null)"
+  [ "$v" = "ok" ] || pkg_field_gap="$pkg_field_gap $k"
+done
+if [ -z "$pkg_field_gap" ]; then
+  ok "packaging: all required manifest fields present and non-empty (${MANIFEST_REQUIRED_FIELDS[*]})"
+else
+  bad "packaging: all required manifest fields present and non-empty" "empty/absent:$pkg_field_gap"
+fi
+# Manifest version must equal the lockstep version (SKILL.md frontmatter is the lockstep anchor).
+pkg_sv="$(grep -oE '^  version: "[^"]+"' "$ROOT/skills/external-agents/SKILL.md" | head -1 | sed -E 's/.*"([^"]+)".*/\1/')"
+if [ -n "$pkg_pv_py" ] && [ "$pkg_pv_py" = "$pkg_sv" ]; then
+  ok "packaging: manifest version equals the lockstep version ($pkg_pv_py)"
+else
+  bad "packaging: manifest version equals the lockstep version" "plugin.json=$pkg_pv_py SKILL.md=$pkg_sv"
+fi
+
 echo "== dual-manifest decision lock (bumper references no .codex-plugin) =="
 # Phase 7.1 removed the dead .codex-plugin/plugin.json reference — the repo ships only
 # .claude-plugin/plugin.json. Lock that decision with a grep regression guard (mirroring the
