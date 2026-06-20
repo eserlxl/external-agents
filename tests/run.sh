@@ -337,6 +337,46 @@ else
   printf '  skip per-run metadata record test (timeout/python3 unavailable)\n'
 fi
 
+echo "== run index (index.jsonl) growth + row content (stub runs, no live CLI) =="
+# The driver appends one JSON-Lines row per agent per run to <base>/index.jsonl. Assert it grows by
+# the expected count, a fan-out shares one run_id (a later single run gets a distinct one), rows carry
+# the resolved model/tier/mode/rc and a fallback boolean (agy quota fallback -> true), and no
+# transcript text leaks — all offline with stub agents.
+if command -v timeout >/dev/null 2>&1 && command -v python3 >/dev/null 2>&1; then
+  istub="$(mktemp -d)"
+  for b in agy codex cursor-agent; do printf '#!/usr/bin/env bash\necho "stub transcript text"\n' >"$istub/$b"; chmod +x "$istub/$b"; done
+  itgt="$(mktemp -d)"; ibase="$(mktemp -d)"
+  # Run 1: a 3-agent fan-out -> 3 rows.  Run 2: a single agent -> +1 row (growth, distinct run_id).
+  PATH="$istub:$PATH" EXTERNAL_AGENTS_OUT="$ibase" \
+    bash "$RUN" --agent all --effort high --read-only --target "$itgt" --prompt x >/dev/null 2>&1
+  PATH="$istub:$PATH" EXTERNAL_AGENTS_OUT="$ibase" \
+    bash "$RUN" --agent codex --effort high --read-only --target "$itgt" --prompt y >/dev/null 2>&1
+  ival="$(python3 -c '
+import json, sys
+lines = [l for l in open(sys.argv[1]) if l.strip()]
+rows = [json.loads(l) for l in lines]
+if len(rows) != 4: print("BAD_COUNT"); sys.exit(0)
+req = {"run_id","timestamp","project","agent","model","tier","effort","mode","target","rc","sec","bytes","fallback"}
+if any(not req <= set(r) for r in rows): print("MISSING_KEYS"); sys.exit(0)
+fan = rows[:3]
+if len({r["run_id"] for r in fan}) != 1: print("FANOUT_RUNID"); sys.exit(0)
+if rows[3]["run_id"] == fan[0]["run_id"]: print("SINGLE_RUNID"); sys.exit(0)
+cx = [r for r in fan if r["agent"] == "codex"][0]
+if cx["model"] != "gpt-5.5" or cx["tier"] != "high" or cx["mode"] != "readonly" or cx["rc"] != 0: print("WRONG_RESOLVED"); sys.exit(0)
+if any(not isinstance(r["fallback"], bool) for r in rows): print("BAD_FALLBACK"); sys.exit(0)
+if [r for r in fan if r["agent"] == "agy"][0]["fallback"] is not True: print("AGY_FALLBACK"); sys.exit(0)
+print("OK")
+' "$ibase/index.jsonl" 2>/dev/null)"
+  assert_contains "index: grows by row-per-agent with resolved fields + run_id grouping" "$ival" "OK"
+  case "$(cat "$ibase/index.jsonl" 2>/dev/null)" in
+    *"stub transcript text"*) bad "index: rows carry no transcript text" "transcript leaked into the index";;
+    *)                        ok  "index: rows carry no transcript text";;
+  esac
+  rm -rf "$istub" "$itgt" "$ibase"
+else
+  printf '  skip run-index test (timeout/python3 unavailable)\n'
+fi
+
 echo "== cross-agent summary block (stub fan-out, no live CLI) =="
 # A --agent all fan-out prints a compact summary block (one row per agent + expected columns).
 # Assert its shape with stub agents, plus the write-mode target-wide note on a write fan-out.
