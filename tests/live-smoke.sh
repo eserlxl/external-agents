@@ -218,6 +218,55 @@ smoke_agent() {  # agent
   return "$rv"
 }
 
+# --- agy quota-fallback live verification (Phase 2.5) -----------------------------
+# agy's 3rd-party tiers (high/xhigh) are quota-aware: the driver consults the free
+# antigravity-usage CLI (read-only — NEVER the quota-spending wakeup) and uses the limited
+# primary ONLY when quota is positively confirmed available, else the larger-limit Gemini
+# fallback. These checks verify that decision against the REAL CLI. AGY_QUOTA_CMD is resolved
+# exactly as the driver resolves it, so an EXTERNAL_AGENTS_AGY_QUOTA_CMD override is honoured.
+AGY_QUOTA_CMD="${EXTERNAL_AGENTS_AGY_QUOTA_CMD:-antigravity-usage --json}"
+
+# quota_reachable — true if the agy quota CLI can be run: an explicit override is set, or the
+# default antigravity-usage is on PATH.
+quota_reachable() {
+  [ -n "${EXTERNAL_AGENTS_AGY_QUOTA_CMD:-}" ] && return 0
+  command -v antigravity-usage >/dev/null 2>&1
+}
+
+# agy_high_dry — print the agy 'high' tier's resolved --model from the driver's dry-run, which
+# runs the real quota check (build_argv -> agy_model_status) read-only. The model label is
+# space-bearing, so it is single-quoted in the dry-run argv; unwrap it.
+agy_high_dry() {
+  "$RUN" --agent agy --effort high --dry-run --prompt x 2>/dev/null \
+    | sed -nE "s/.*--model '?([^']*)'?.*/\1/p" | head -1
+}
+
+# quota_probe — verify the agy quota-aware fallback against the REAL quota CLI. Exercises the
+# driver's agy_model_status (via the agy high dry-run) read-only and reports the resolved
+# status + model. It NEVER spends quota: the driver only ever runs the read-only AGY_QUOTA_CMD,
+# never wakeup, which this asserts. Returns 0 unless an inconsistency is found.
+quota_probe() {
+  local note model status rv=0
+  echo "live smoke: agy quota probe (read-only; never calls wakeup)"
+  # The configured quota command must be read-only — the driver never spends quota.
+  case "$AGY_QUOTA_CMD" in *wakeup*)
+    echo "live smoke: agy quota probe  FAIL: quota command must be read-only (contains 'wakeup')" >&2
+    return 1;;
+  esac
+  # Feed the real quota CLI through agy_model_status via the dry-run (the dry-run runs the real
+  # AGY_QUOTA_CMD read-only inside the driver): the NOTE reveals the status, the argv the model.
+  note="$("$RUN" --agent agy --effort high --dry-run --prompt x 2>&1 >/dev/null)"
+  model="$(agy_high_dry)"
+  case "$note" in
+    *"is unknown"*)     status=unknown;;
+    *"is exhausted"*)   status=exhausted;;
+    *"using fallback"*) status=exhausted;;
+    *)                  status=available;;
+  esac
+  echo "live smoke: agy quota probe  status=$status resolved-model='$model' (no wakeup)"
+  return "$rv"
+}
+
 # write_status_record — write a deterministic per-agent status record (one "<agent>  <status>"
 # line per known agent, in KNOWN_AGENTS order) to $LIVE_OUT/status.txt, so which agents are
 # live-verified in this environment is auditable M4 evidence. Reads the caller's AGENT_STATUS
@@ -317,6 +366,17 @@ EOF
     if [ "$agent_fail" -eq 0 ]; then AGENT_STATUS[$a]=live-verified; else AGENT_STATUS[$a]=failed; fi
     fails=$((fails + agent_fail))
   done
+
+  # Phase 2.5: agy quota-fallback live verification (only when agy is verified and the quota
+  # CLI is reachable). A probe failure downgrades agy and the run.
+  case " ${verify[*]} " in *" agy "*)
+    if quota_reachable; then
+      if ! quota_probe; then fails=$((fails + 1)); AGENT_STATUS[agy]=failed; fi
+    else
+      echo "live smoke: agy quota probe skipped (antigravity-usage not reachable)"
+    fi;;
+  esac
+
   write_status_record
   if [ "$fails" -gt 0 ]; then
     echo "live smoke: $fails agent(s) failed live checks for ${verify[*]}" >&2
