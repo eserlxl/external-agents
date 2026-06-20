@@ -13,6 +13,7 @@ jobs:
   # the E2E recipes (tests/e2e/), which launch real external agent CLIs (cost + ship the
   # tree to third-party providers). Any live verification belongs in a SEPARATE,
   # non-required, manually / scheduled job — never a step added to this job.
+  # These steps mirror the local validation loop in CONTRIBUTING.md — keep the two in sync.
   check:
     runs-on: ubuntu-latest
     steps:

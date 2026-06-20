@@ -651,3 +651,11 @@ Cutting a release is a documented, repeatable procedure: run the lockstep
 [`scripts/bump-version.sh`](scripts/bump-version.sh), then create and push the matching annotated
 tag (the step the bumper deliberately leaves out). The full flow — clean tree, dry-run preview, real
 bump, diff review, commit, `vX.Y.Z` tag, push — is in [RELEASING.md](RELEASING.md).
+
+## Contributing
+
+Contributions are welcome. [CONTRIBUTING.md](CONTRIBUTING.md) covers local setup, the CI-mirroring
+validation loop (`shellcheck` + the `agents.json` schema check + `bash tests/run.sh`), the
+interface/driver/adapter architecture and the safety invariants, the test expectations (extend the
+offline suite; keep jq/python3 parity), and version/changelog discipline via
+[`scripts/bump-version.sh`](scripts/bump-version.sh) (release flow in [RELEASING.md](RELEASING.md)).
