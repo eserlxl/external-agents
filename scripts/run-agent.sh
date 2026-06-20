@@ -85,6 +85,7 @@ EFFORT=""                    # requested effort TIER (low|medium|high|xhigh); bl
 MODEL=""                     # per-run model override; else the tier's model / cli default
 CLAUDE_PERM="acceptEdits"    # claude write-mode permission mode
 OUT=""                       # default resolved after TARGET
+OUT_SET=""                   # set when --out is given explicitly (chooses the run-index base)
 CONF="$PLUGIN_ROOT/agents.json"
 TIMEOUT=1800
 YES=0
@@ -150,7 +151,7 @@ while [ $# -gt 0 ]; do
     --model) MODEL="$2"; shift 2;;
     --claude-perm) CLAUDE_PERM="$2"; shift 2;;
     --timeout) TIMEOUT="$2"; shift 2;;
-    --out) OUT="$2"; shift 2;;
+    --out) OUT="$2"; OUT_SET=1; shift 2;;
     --conf) CONF="$2"; shift 2;;
     --list) LIST=1; shift;;
     --check) CHECK=1; shift;;
@@ -526,6 +527,12 @@ elif [ -n "$TOP" ]; then PROJECT="$(basename "$TOP")"
 else PROJECT="$LEAF"; fi
 [ -z "$OUT" ] && OUT="${EXTERNAL_AGENTS_OUT:-$HOME/.external-agents/logs}/$PROJECT"
 if [ "$DRYRUN" = "0" ]; then mkdir -p "$OUT"; OUT="$(cd "$OUT" && pwd -P)"; fi
+# Run index (Phase 5.2): an append-only JSON-Lines history under the transcript base — the
+# EXTERNAL_AGENTS_OUT base (default ~/.external-agents/logs), or the explicit --out dir when given.
+# RUN_ID groups the agents of this one invocation (a --agent all fan-out shares it).
+RUN_ID="$(date -u +%Y%m%dT%H%M%SZ 2>/dev/null || echo run)-$$"
+if [ -n "$OUT_SET" ]; then INDEX_BASE="$OUT"; else INDEX_BASE="${EXTERNAL_AGENTS_OUT:-$HOME/.external-agents/logs}"; fi
+INDEX="$INDEX_BASE/index.jsonl"
 
 # agy --sandbox is best-effort, NOT a hard write barrier (see header) — warn so a
 # read-only run is never mistaken for an enforced guarantee.
@@ -653,6 +660,34 @@ PY
         '{agent:$agent, model:$model, tier:$tier, effort:$effort, mode:$mode, target:$target,
           rc:($rc|tonumber? // $rc), sec:($sec|tonumber? // $sec), bytes:($bytes|tonumber? // $bytes),
           fallback:($fb=="1"), timestamp:$ts}' >"$file"
+      ;;
+  esac
+}
+
+# append_index_row INDEX META RUN_ID PROJECT
+# Append ONE JSON-Lines row to the run index: the agent's per-run metadata record augmented with the
+# run id (groups a fan-out) and the project namespace. Append-only and control-plane only (the meta
+# record already is), so the index never accrues transcript text. No-op if the meta record is absent.
+append_index_row() {
+  local index="$1" meta="$2" run_id="$3" project="$4"
+  [ -f "$meta" ] || return 0
+  case "$JSON_BACKEND" in
+    py)
+      RUN_ID="$run_id" PROJECT="$project" python3 - "$meta" >>"$index" <<'PY'
+import json, os, sys
+try:
+    d = json.load(open(sys.argv[1]))
+except Exception:
+    raise SystemExit
+row = {"run_id": os.environ.get("RUN_ID", ""), "timestamp": d.get("timestamp", ""),
+       "project": os.environ.get("PROJECT", "")}
+row.update(d)
+print(json.dumps(row, separators=(",", ":")))
+PY
+      ;;
+    jq)
+      jq -c --arg run_id "$run_id" --arg project "$project" \
+        '{run_id:$run_id, timestamp:.timestamp, project:$project} + .' "$meta" >>"$index"
       ;;
   esac
 }
@@ -804,5 +839,10 @@ print(json.dumps({"mode": sys.argv[1], "tier": sys.argv[2], "ok": int(sys.argv[3
           '{mode:$mode, tier:$tier, ok:$ok, fail:$fail, count:length, agreement:$agreement, agents:.}'
   fi
 fi
+# Append one run-index row per agent (Phase 5.2) from its per-run metadata record — a durable,
+# cross-run history without walking the transcript tree. Best-effort: a write failure never fails the
+# run (the transcripts and per-run records still stand).
+mkdir -p "$INDEX_BASE" 2>/dev/null || true
+for a in "${RUN[@]}"; do append_index_row "$INDEX" "$OUT/$a.meta.json" "$RUN_ID" "$PROJECT"; done
 echo "external-agents: $ok ok, $fail failed  (transcripts in $OUT)" >&2
 [ "$fail" -eq 0 ]
