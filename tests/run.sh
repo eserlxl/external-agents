@@ -653,6 +653,27 @@ else
   bad "e2e_make_fixture produced a fixture" "no path returned"
 fi
 
+echo "== E2E evidence capture (dry-run records argv + pre-state, no CLI) =="
+# The capture lib records uniform before/after evidence. Offline, with a --dry-run invocation,
+# it must record the resolved (masked) argv and the fixture's pre-run state without launching a CLI.
+# shellcheck source=/dev/null  # dynamic absolute-path source, not followed by shellcheck
+. "$ROOT/tests/e2e/lib/capture.sh"
+cfx="$(e2e_make_fixture)"
+cev="$(mktemp -d)/ev"
+if [ -n "$cfx" ] && [ -d "$cfx" ]; then
+  e2e_capture_pre "$cfx" "$cev"
+  e2e_capture_argv "$RUN" codex --read-only "$cfx" "$cev" "look at the seed file"
+  if [ -s "$cev/pre.sha" ]; then ok "capture records the pre-run fixture sha"; else bad "capture records the pre-run fixture sha" "no pre.sha"; fi
+  if [ -f "$cev/pre.status" ] && [ ! -s "$cev/pre.status" ]; then ok "capture records a clean pre-run status"; else bad "capture records a clean pre-run status" "pre.status missing or non-empty"; fi
+  argv_rec="$(cat "$cev/argv" 2>/dev/null)"
+  assert_contains "capture records the resolved read-only argv (no CLI)" "$argv_rec" "codex exec -s read-only"
+  assert_contains "captured argv masks the prompt" "$argv_rec" "<PROMPT>"
+  case "$argv_rec" in *"look at the seed file"*) bad "captured argv carries no prompt text" "prompt leaked";; *) ok "captured argv carries no prompt text";; esac
+  rm -rf "$cfx" "$cev"
+else
+  bad "e2e_make_fixture produced a fixture for capture" "no path"
+fi
+
 echo "== shellcheck (regression guard) =="
 if command -v shellcheck >/dev/null 2>&1; then
   if shellcheck "$ROOT/scripts/run-agent.sh" "$ROOT/scripts/bump-version.sh" >/dev/null 2>&1; then
