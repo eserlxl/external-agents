@@ -88,6 +88,29 @@ assert_contains "agy read-only emits the best-effort NOTE" "$agy_note" "best-eff
 agy_all="$(bash "$RUN" --agent agy --read-only --effort medium --dry-run --prompt x 2>&1)"
 case "$agy_all" in *[Ee]nforced*) bad "agy read-only is not over-claimed as enforced" "found an 'enforced' claim in agy output";; *) ok "agy read-only is not over-claimed as enforced";; esac
 
+echo "== enforcement-class doc-drift guard (registry ADAPTER_ENFORCEMENT == threat-model matrix) =="
+# Phase 9.2 made the read-only enforcement class a registry field (ADAPTER_ENFORCEMENT). Tie it to the
+# published matrix in docs/threat-model.md so the two cannot silently drift: for EVERY agent the
+# registry's class must equal the matrix's enforcement column. Intentionally fails if they disagree.
+ec_reg_line="$(grep -E '^declare -A ADAPTER_ENFORCEMENT=' "$ROOT/scripts/run-agent.sh" | head -1)"
+ecdrift=""
+for a in agy codex claude cursor; do
+  reg="$(printf '%s' "$ec_reg_line" | grep -oE "\[$a\]=\"[a-z-]+\"" | sed -E 's/.*="([a-z-]+)"/\1/')"
+  mrow="$(grep -E "^\| ${a}[[:space:]]" "$ROOT/docs/threat-model.md" | head -1)"
+  mcol="$(printf '%s' "$mrow" | awk -F'|' '{print $4}')"
+  case "$mcol" in
+    *best-effort*) mat="best-effort";;
+    *enforced*)    mat="enforced";;
+    *)             mat="?";;
+  esac
+  if [ -z "$reg" ] || [ "$reg" != "$mat" ]; then ecdrift="$ecdrift $a(reg=$reg,matrix=$mat)"; fi
+done
+if [ -z "$ecdrift" ]; then
+  ok "enforcement drift: registry enforcement classes match the threat-model matrix"
+else
+  bad "enforcement drift: registry enforcement classes match the threat-model matrix" "mismatch:$ecdrift"
+fi
+
 echo "== jq / python3 config-backend parity (--list byte-identical) =="
 out_jq="$(bash "$RUN" --list 2>/dev/null)"
 tdir="$(mktemp -d)"

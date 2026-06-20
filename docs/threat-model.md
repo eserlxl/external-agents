@@ -46,7 +46,9 @@ A dispatch crosses four boundaries, each less trusted than the last:
 ## Per-CLI read-only enforcement matrix
 
 `--read-only` is enforced unevenly across CLIs. This matrix is the published source of truth that
-Phase 6.4's accuracy test asserts against the driver's resolved read-only argv:
+Phase 6.4's accuracy test asserts against the driver's resolved read-only argv, and that the Phase 9.2
+enforcement-class doc-drift guard asserts against the driver's `ADAPTER_ENFORCEMENT` registry field
+(the **enforcement** column below) — so the matrix, the argv, and the registry cannot drift apart:
 
 | agent | read-only mechanism | enforcement | source of truth (`scripts/run-agent.sh`) |
 |-------|---------------------|-------------|------------------------------------------|
