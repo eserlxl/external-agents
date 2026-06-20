@@ -44,3 +44,31 @@ applies: the containment gate, the non-cwd-write `--yes` gate, transcript redact
 echo / seeding the next stage), and the single-argv injection-safe prompt. The pipeline is never a back
 door around the single-run safety model — Phase 9.4's per-stage enforcement and stub-driven oracle
 prove this offline.
+
+## Consensus
+
+A `--agent all` fan-out already returns N transcripts plus a deterministic **agreement** signal
+(`all-ok` / `mixed` / `all-fail`) derived from the per-agent exit-code tally. Consensus extends that
+into a **quorum verdict** a caller can act on — still **outcome-based and deterministic**, never an
+interpretation of free text.
+
+### Deterministic outcome-consensus verdict
+
+Over the parallel fan-out's per-agent **success tally** (an agent succeeded iff its run was `ok`), the
+consensus verdict is a **majority/quorum** over the panel:
+
+- `consensus`  — a strict majority of the panel succeeded (`ok` count > half the panel);
+- `no-quorum`  — exactly half succeeded (a tie, no majority);
+- `none`       — no agent succeeded.
+
+It is computed from the per-agent success count / records, **never** from transcript text, so it is
+deterministic and content-free (like the agreement signal). It is **additive**: plain fan-out and
+single-agent output are unchanged when consensus is not surfaced.
+
+### Honest limit: semantic consensus is gated
+
+This is an **outcome** verdict (did the panel *succeed*), **not** a **semantic** one (do the agents
+agree on *what they said*). Content-level semantic consensus would require parsing each agent's
+free-text answer into a comparable structured form — which needs a **human-confirmed structured-output
+schema** and live-run evidence — so it is **deliberately deferred**, mirroring the driver's existing
+agreement-signal honesty note. To compare the agents' actual content, read the verbatim transcripts.

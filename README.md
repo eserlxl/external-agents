@@ -395,7 +395,9 @@ For a **read-only** fan-out on a git target it also adds a **no-mutation** line 
 agents left the shared tree unchanged (every read-only mode should — agy is best-effort).
 
 These agreement signals are **deterministic and outcome-based** — they come from the per-agent
-exit-code tally and the target tree's git state, never from interpreting the agents' answers.
+exit-code tally and the target tree's git state, never from interpreting the agents' answers. The
+deterministic **consensus** verdict (a majority/quorum over the per-agent success tally) extends this
+same outcome-based signal — see [`docs/orchestration.md`](docs/orchestration.md#consensus).
 **Semantic content agreement** (do the agents actually agree on *what they said*?) is **not provided**:
 that needs a human-confirmed cross-agent summary schema and live-run evidence, so it is deliberately
 deferred. Read the verbatim transcripts to compare the agents' actual content.
