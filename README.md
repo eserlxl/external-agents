@@ -406,6 +406,31 @@ jq -c 'select(.fallback)' "$IDX"
 Without `jq`, the same rows read fine in `python3` (`for l in open(IDX): json.loads(l)`) or as raw
 lines with `tail`/`grep`.
 
+### Cost, latency, and quality signals
+
+Some agent CLIs print machine-readable **cost / token signals** in their output (e.g. a token count
+or a dollar cost). When present, the driver lifts them — **best-effort** — into an optional `signals`
+object on the [per-run record](#per-run-metadata-record) and [index row](#run-index); when a signal
+is **absent or unrecognized**, that field is the explicit string `"unavailable"` — **never** a
+guessed or fabricated number, and never a silent gap.
+
+**What is recognized.** Extraction is **capability-aware per agent** and deliberately
+**conservative** — it matches only tightly-anchored shapes, so ordinary transcript prose is never
+mistaken for a metric:
+
+| signal | recognized shape (case-insensitive, anchored) |
+|--------|-----------------------------------------------|
+| `tokens` | a `tokens used: N` / `total tokens: N` / `N tokens` line |
+| `cost` | a `cost: $X` / `total cost: $X` line |
+
+**Status — best-effort, not yet live-confirmed.** These recognizers are derived from the CLIs'
+*expected* output shapes; **no signal has been confirmed against a live run in this repo's offline
+work** (the offline CI never launches a real CLI — see [Testing](#testing)). So in practice a field
+reads `"unavailable"` unless a CLI's real output happens to match a recognized shape. Confirming
+*which* agents actually emit *which* signals — and their exact live shapes — is left to the opt-in
+[live/E2E harness](#live-smoke-opt-in); the offline suite proves only that a recognized shape **is**
+extracted and an absent one yields `"unavailable"` (via committed fixtures).
+
 ## Safety
 
 For the full trust-boundary analysis and the per-CLI enforcement matrix, see
