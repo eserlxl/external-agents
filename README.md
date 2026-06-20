@@ -340,6 +340,10 @@ live harness above.
 
 ## Fan-out observability
 
+> Beyond parallel fan-out, two further orchestration patterns are specified in
+> [`docs/orchestration.md`](docs/orchestration.md): a **sequential pipeline** (each stage's redacted
+> output seeds the next) and a deterministic **consensus** verdict over a fan-out.
+
 A `--agent all` fan-out records, per agent, a **result record** built entirely from **control-plane
 facts** — values the driver already resolved at launch/collect time, **never parsed from the
 transcript**:
