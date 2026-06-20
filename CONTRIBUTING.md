@@ -45,17 +45,28 @@ Three layers, one rule:
 prompt construction are all enforced in `run-agent.sh`, so they hold no matter how the script is
 invoked — never relocate a gate up into the skill or command.
 
-## Safety invariants (must always hold)
+## Secret & safety discipline (must always hold)
 
-- **No secrets in any committed file or transcript.** Transcripts are redacted (best-effort) and land
-  outside the repo; never commit one.
-- **Prompt passing is injection-safe.** The prompt is always a single argv element (or stdin), never
-  `eval`'d or word-split.
-- **Per-CLI enforcement stays honest.** `codex` / `claude` / `cursor` read-only is enforced; `agy`
-  read-only is best-effort — never document or assert agy as enforced.
+These are standing policies a contribution must uphold; each is enforced at a specific gate in
+`scripts/run-agent.sh`. Don't weaken a gate — if you change one, keep its offline test passing.
+
+- **No secrets in any committed file or transcript.** The driver masks secret-shaped tokens via the
+  `redact()` function before a transcript is persisted or echoed, and the per-run metadata record and
+  run index carry **control-plane facts only** — never transcript text or the prompt. Redaction is
+  **best-effort** (length-bounded), so raw transcripts still land *outside* the repo and are never
+  committed. Never add a path that writes raw agent output, the prompt, or a credential to a tracked
+  file.
+- **Prompt passing is injection-safe.** The prompt is always passed as a **single argv element** (or
+  via stdin), never `eval`'d or word-split, regardless of content — see `build_argv` and the
+  `format_masked_argv` record, which masks the prompt to `<PROMPT>`. Never interpolate the prompt into
+  a shell string.
+- **Keep the per-CLI enforcement matrix honest.** `codex` / `claude` / `cursor` read-only is
+  **enforced**; `agy` read-only is **best-effort** (`--sandbox` is not a hard write barrier). Never
+  document, assert, or test agy read-only as enforced — the offline suite checks the driver's argv
+  against the matrix in [docs/threat-model.md](docs/threat-model.md), which must stay in sync.
 
 The full trust-boundary analysis is in [docs/threat-model.md](docs/threat-model.md); the README
-[Safety](README.md#safety) section is the user-facing summary.
+[Safety](README.md#safety) section is the user-facing summary of these same gates.
 
 ## Tests
 
