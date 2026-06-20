@@ -587,6 +587,49 @@ use it for rough comparison, not billing. For latency and output size, prefer th
 regardless of what the CLI prints; `signals.tokens` / `signals.cost` are the optional, CLI-dependent
 extras layered on top.
 
+### Run-history analytics
+
+The append-only [run index](#run-index) accumulates one row per agent per run; the read-only
+analytics surface ([`scripts/run-history-report.sh`](scripts/run-history-report.sh)) aggregates it
+into cross-run trends **without ever mutating it**. It derives this metric set:
+
+| metric | meaning |
+|--------|---------|
+| `runs` | total rows (one per agent per run) |
+| `ok` / `failed` | rows whose outcome is `ok` (`error_class == "ok"`, or `rc == 0` for pre-8.2 rows) vs not |
+| `success_rate` | `ok / runs` (0..1) |
+| `error_class` | the per-class distribution, e.g. `{"ok": 12, "transient": 3, "auth": 1}` |
+| `fallback` | `{ "count": n, "rate": r }` — rows where the agy quota fallback fired |
+| `sec` / `bytes` | `{ "min", "max", "mean" }` over the **driver-measured** latency / size |
+| `tokens` | `{ "counted", "unavailable", "sum", "mean" }` over numeric `signals.tokens` only |
+| `cost` | `{ "counted", "unavailable", "sum" }` over numeric `signals.cost` only |
+
+**The `unavailable`-exclusion rule is decisive:** `signals.tokens` / `signals.cost` aggregates count
+**only present (numeric) values**; an `unavailable` row is **excluded from the denominator, never
+counted as zero** (which would understate the true average). Each aggregate reports both the
+`counted` and `unavailable` row counts so the exclusion is auditable.
+
+The machine-readable JSON output shape is one document:
+
+```json
+{
+  "runs": 16,
+  "ok": 12,
+  "failed": 4,
+  "success_rate": 0.75,
+  "error_class": { "ok": 12, "transient": 3, "auth": 1 },
+  "fallback": { "count": 5, "rate": 0.3125 },
+  "sec": { "min": 1, "max": 42, "mean": 8.5 },
+  "bytes": { "min": 10, "max": 4096, "mean": 512.0 },
+  "tokens": { "counted": 9, "unavailable": 7, "sum": 81000, "mean": 9000.0 },
+  "cost": { "counted": 9, "unavailable": 7, "sum": 1.23 }
+}
+```
+
+A human-readable table is also available. The surface is **strictly read-only** over the append-only
+index, and the field contract it consumes is in
+[`docs/run-record-contract.md`](docs/run-record-contract.md).
+
 ## Safety
 
 For the full trust-boundary analysis and the per-CLI enforcement matrix, see

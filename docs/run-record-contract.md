@@ -72,3 +72,13 @@ Both records carry **only** the control-plane facts above — never the prompt, 
 never a secret. This is enforced in the driver (records are built from values resolved at
 launch/collect, never parsed from the transcript) and asserted by the offline suite. The full
 trust-boundary analysis is in [threat-model.md](threat-model.md).
+
+## Aggregate analytics
+
+The append-only [run index](../README.md#run-index) is aggregated read-only by
+`scripts/run-history-report.sh` into cross-run trends — run/success counts, the `error_class`
+distribution, the agy fallback rate, `sec`/`bytes` summaries, and `tokens`/`cost` aggregates. The
+**`unavailable` exclusion rule** applies to every cost/usage aggregate: an `unavailable` value is
+**excluded** from the aggregate (and reported as an `unavailable` count), never counted as `0`. The
+full metric set and JSON output shape are documented in the README
+[Run-history analytics](../README.md#run-history-analytics) section.
