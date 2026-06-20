@@ -402,6 +402,42 @@ else
   skip "pipeline outcome summary content-free oracle (timeout/python3 unavailable)"
 fi
 
+echo "== stub-driven consensus oracle (representative panels; deterministic; both backends) =="
+# Run stub panels with controlled per-agent exit codes (pinned to an exact agent set via --conf, so
+# no live CLI can join) and assert the deterministic consensus verdict for each — all-agree, majority,
+# minority, all-fail, and an even-panel tie — under jq AND a python3-only PATH.
+if command -v timeout >/dev/null 2>&1 && command -v python3 >/dev/null 2>&1; then
+  cnrestr="$(mktemp -d)"; mk_restricted_bin "$cnrestr"   # python3, NO jq -> forces JSON_BACKEND=py
+  cn3conf="$(mktemp)"; printf '%s' '{"default_tier":"medium","agents":{"codex":{"enabled":true,"tiers":{"medium":{"model":"m"}}},"agy":{"enabled":true,"tiers":{"medium":{"model":"m"}}},"cursor":{"enabled":true,"tiers":{"medium":{"model":"m"}}}}}' >"$cn3conf"
+  cn2conf="$(mktemp)"; printf '%s' '{"default_tier":"medium","agents":{"codex":{"enabled":true,"tiers":{"medium":{"model":"m"}}},"agy":{"enabled":true,"tiers":{"medium":{"model":"m"}}}}}' >"$cn2conf"
+  cn_verdict() {  # bashbin pathprefix conf codex_rc agy_rc [cursor_rc] -> the consensus verdict word
+    local bb="$1" pp="$2" cf="$3" rc_c="$4" rc_a="$5" rc_u="${6:-}" sd tg out v
+    sd="$(mktemp -d)"; tg="$(mktemp -d)"; out="$(mktemp -d)"
+    printf '#!/usr/bin/env bash\necho ok\nexit %s\n' "$rc_c" >"$sd/codex"; chmod +x "$sd/codex"
+    printf '#!/usr/bin/env bash\necho ok\nexit %s\n' "$rc_a" >"$sd/agy";   chmod +x "$sd/agy"
+    [ -n "$rc_u" ] && { printf '#!/usr/bin/env bash\necho ok\nexit %s\n' "$rc_u" >"$sd/cursor-agent"; chmod +x "$sd/cursor-agent"; }
+    v="$(PATH="$sd:$pp" EXTERNAL_AGENTS_OUT="$out" EXTERNAL_AGENTS_AGY_QUOTA_CMD=false "$bb" "$RUN" --agent all --read-only --consensus --conf "$cf" --target "$tg" --prompt x 2>/dev/null | sed -nE 's/.*consensus: ([a-z-]+) .*/\1/p')"
+    rm -rf "$sd" "$tg" "$out"
+    printf '%s' "$v"
+  }
+  for be in jq py; do
+    if [ "$be" = "jq" ]; then
+      command -v jq >/dev/null 2>&1 || { skip "consensus oracle ($be backend: jq unavailable)"; continue; }
+      cnbb="bash"; cnpp="$PATH"
+    else
+      cnbb="$cnrestr/bin/bash"; cnpp="$cnrestr/bin"
+    fi
+    assert_contains "consensus[$be]: all-agree (3/3) -> consensus" "$(cn_verdict "$cnbb" "$cnpp" "$cn3conf" 0 0 0)" "consensus"
+    assert_contains "consensus[$be]: majority (2/3) -> consensus"  "$(cn_verdict "$cnbb" "$cnpp" "$cn3conf" 0 0 1)" "consensus"
+    assert_contains "consensus[$be]: minority (1/3) -> no-quorum"  "$(cn_verdict "$cnbb" "$cnpp" "$cn3conf" 0 1 1)" "no-quorum"
+    assert_contains "consensus[$be]: all-fail (0/3) -> none"       "$(cn_verdict "$cnbb" "$cnpp" "$cn3conf" 1 1 1)" "none"
+    assert_contains "consensus[$be]: tie (1/2) -> no-quorum"       "$(cn_verdict "$cnbb" "$cnpp" "$cn2conf" 0 1)"   "no-quorum"
+  done
+  rm -rf "$cnrestr"; rm -f "$cn3conf" "$cn2conf"
+else
+  skip "stub-driven consensus oracle (timeout/python3 unavailable)"
+fi
+
 echo "== agents.json schema validation (draft-07 contract) =="
 if python3 -c 'import jsonschema' 2>/dev/null; then
   # schema_check FILE -> "OK" if FILE validates against schema/agents.schema.json, else "REJECTED".
