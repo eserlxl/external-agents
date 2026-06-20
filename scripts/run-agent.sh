@@ -623,8 +623,42 @@ format_masked_argv() {
   printf '%s' "${line# }"
 }
 
-run_one() {  # agent  (cwd=TARGET) — stdout->$OUT/<a>.md (redacted), stderr->.err, rc/.sec
-  local a="$1" t0 t1 rc
+# write_meta_json FILE agent model tier effort mode target rc sec bytes fallback timestamp
+# Emit the Phase 5.1 per-run metadata record as ONE JSON object (safe escaping via the same
+# jq/python3 backend the config reads through). It carries ONLY control-plane facts the driver
+# resolved at launch/collect — never transcript text — so it never leaks an agent's free-text or
+# the prompt. `fallback` is passed as "1"/"0" and rendered as a JSON boolean; rc/sec/bytes render
+# as JSON numbers (falling back to the raw string if non-numeric).
+write_meta_json() {
+  local file="$1"; shift
+  case "$JSON_BACKEND" in
+    py)
+      python3 - "$@" >"$file" <<'PY'
+import json, sys
+a = sys.argv[1:]
+def num(x):
+    try: return int(x)
+    except (ValueError, TypeError): return x
+print(json.dumps({
+    "agent": a[0], "model": a[1], "tier": a[2], "effort": a[3], "mode": a[4],
+    "target": a[5], "rc": num(a[6]), "sec": num(a[7]), "bytes": num(a[8]),
+    "fallback": a[9] == "1", "timestamp": a[10],
+}, separators=(",", ":")))
+PY
+      ;;
+    jq)
+      jq -nc \
+        --arg agent "$1" --arg model "$2" --arg tier "$3" --arg effort "$4" --arg mode "$5" \
+        --arg target "$6" --arg rc "$7" --arg sec "$8" --arg bytes "$9" --arg fb "${10}" --arg ts "${11}" \
+        '{agent:$agent, model:$model, tier:$tier, effort:$effort, mode:$mode, target:$target,
+          rc:($rc|tonumber? // $rc), sec:($sec|tonumber? // $sec), bytes:($bytes|tonumber? // $bytes),
+          fallback:($fb=="1"), timestamp:$ts}' >"$file"
+      ;;
+  esac
+}
+
+run_one() {  # agent  (cwd=TARGET) — stdout->$OUT/<a>.md (redacted), stderr->.err, rc/.sec, .meta.json
+  local a="$1" t0 t1 rc ts bytes reff
   build_argv "$a" || return 1
   # Record the resolved launch argv with the prompt masked — identical to --dry-run — so a
   # live run's exact argv can be verified without ever persisting the prompt text.
@@ -634,12 +668,21 @@ run_one() {  # agent  (cwd=TARGET) — stdout->$OUT/<a>.md (redacted), stderr->.
   printf '%s' "$RESOLVED_MODEL"  >"$OUT/$a.model"
   printf '%s' "$FALLBACK_TAKEN"  >"$OUT/$a.fallback"
   t0=$(date +%s 2>/dev/null || echo 0)
+  ts="$(date -u +%Y-%m-%dT%H:%M:%SZ 2>/dev/null || echo unknown)"   # launch time, UTC ISO-8601
   # Pipe stdout through redact so a secret-shaped token never persists to disk or echo;
   # rc is the agent's (PIPESTATUS[0]), not redact's.
   ( cd "$TARGET" && timeout "$TIMEOUT" "${ARGV[@]}" ) 2>"$OUT/$a.err" | redact >"$OUT/$a.md"
   rc=${PIPESTATUS[0]}
   t1=$(date +%s 2>/dev/null || echo 0)
   echo "$rc" >"$OUT/$a.rc"; echo "$((t1 - t0))" >"$OUT/$a.sec"
+  # Phase 5.1 — durable, structured per-run metadata record: one JSON object per agent next to its
+  # transcript, built ONLY from values resolved here (post-fallback model, run mode, target, rc/sec/
+  # bytes, fallback flag, launch timestamp) — never the transcript — so the run's resolution is
+  # inspectable without re-parsing free-text output. `bytes` matches the collect loop's measure.
+  bytes=$(wc -c <"$OUT/$a.md" 2>/dev/null | tr -d ' '); [ -n "$bytes" ] || bytes=0
+  reff="$(cfg effort "$a" "$TIER")"
+  write_meta_json "$OUT/$a.meta.json" "$a" "${RESOLVED_MODEL:-(cli default)}" "${TIER:-(none)}" \
+    "${reff:-(none)}" "$MODE" "$TARGET" "$rc" "$((t1 - t0))" "$bytes" "$FALLBACK_TAKEN" "$ts"
 }
 
 # --- dry-run: print resolved argv and exit ----------------------------------------
