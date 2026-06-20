@@ -17,6 +17,9 @@ PASS=0
 FAIL=0
 ok()  { PASS=$((PASS + 1)); printf '  ok   %s\n' "$1"; }
 bad() { FAIL=$((FAIL + 1)); printf '  FAIL %s\n' "$1"; [ -n "${2:-}" ] && printf '       %s\n' "$2"; }
+SKIP=0
+# skip DESC — record a skipped block so the summary surfaces coverage that did not run.
+skip() { SKIP=$((SKIP + 1)); printf '  skip %s\n' "$1"; }
 
 # assert_contains DESC HAYSTACK NEEDLE
 assert_contains() { case "$2" in *"$3"*) ok "$1";; *) bad "$1" "missing: $3";; esac; }
@@ -96,7 +99,7 @@ if [ -n "$out_jq" ] && [ -n "$out_py" ]; then
     bad "jq and python3 --list output identical" "backends diverged"
   fi
 else
-  printf '  skip jq/python3 parity (could not run both backends in this environment)\n'
+  skip "jq/python3 parity (could not run both backends in this environment)"
 fi
 
 echo "== per-agent jq/python3 dry-run parity (model/effort/fallback ops under both backends) =="
@@ -107,7 +110,7 @@ parity_dry() {  # agent  effort  [extra env assignment]
   local a="$1" e="$2" env="${3:-}" oj op
   oj="$(env ${env:+$env} bash "$RUN" --agent "$a" --read-only --effort "$e" --dry-run --prompt p 2>/dev/null)"
   op="$(env ${env:+$env} PATH="$pdir/bin" "$pdir/bin/bash" "$RUN" --agent "$a" --read-only --effort "$e" --dry-run --prompt p 2>/dev/null)"
-  if [ -z "$oj" ] || [ -z "$op" ]; then printf '  skip %s/%s parity (a backend unavailable)\n' "$a" "$e"; return; fi
+  if [ -z "$oj" ] || [ -z "$op" ]; then skip "$a/$e parity (a backend unavailable)"; return; fi
   if [ "$oj" = "$op" ]; then ok "dry-run parity: $a $e (jq == python3)"; else bad "dry-run parity: $a $e" "backends diverged"; fi
 }
 for a in codex claude cursor; do for e in low medium high xhigh; do parity_dry "$a" "$e"; done; done
@@ -145,7 +148,7 @@ PY
   assert_contains "schema rejects fallback on a non-agy agent" "$(schema_check "$nfx")" "REJECTED"
   rm -f "$nfx"
 else
-  printf '  skip schema validation (python3 jsonschema not installed)\n'
+  skip "schema validation (python3 jsonschema not installed)"
 fi
 
 echo "== effort + write-mode safety gates (early exit, no agent launched) =="
@@ -182,7 +185,7 @@ if [ -L "$sl/link" ]; then
   assert_exit     "symlinked target into the plugin is refused (exit 2)" 2 "$sl_rc"
   assert_contains "symlink bypass collapsed by pwd -P"                   "$sl_err" "plugin tree"
 else
-  printf '  skip symlink-bypass test (could not create symlink)\n'
+  skip "symlink-bypass test (could not create symlink)"
 fi
 rm -rf "$sl"
 
@@ -232,7 +235,7 @@ if [ -n "${_pa:-}" ]; then
   assert_contains "explicit X.Y.Z target"   "$(ALLOW_DIRTY=1 bash "$BV" 2.5.0 --dry-run 2>/dev/null)" "-> 2.5.0"
   assert_contains "explicit pre-release"     "$(ALLOW_DIRTY=1 bash "$BV" 2.0.0-rc.1 --dry-run 2>/dev/null)" "-> 2.0.0-rc.1"
 else
-  printf '  skip bump-version compute (could not parse current version %s)\n' "$pv"
+  skip "bump-version compute (could not parse current version $pv)"
 fi
 
 echo "== agy quota-aware fallback model pick (--dry-run, stubbed quota) =="
@@ -284,7 +287,7 @@ if command -v timeout >/dev/null 2>&1; then
   assert_exit "record: one record per fan-out agent (3)" 3 "$recn"
   rm -rf "$recstub" "$rectgt" "$recodir"
 else
-  printf '  skip per-agent record test (timeout unavailable)\n'
+  skip "per-agent record test (timeout unavailable)"
 fi
 
 echo "== per-run metadata record (.meta.json) presence + resolved values (stub fan-out) =="
@@ -334,7 +337,7 @@ print("OK" if d.get("fallback") is True else "NOT_TRUE")
   esac
   rm -rf "$mstub" "$mtgt" "$modir"
 else
-  printf '  skip per-run metadata record test (timeout/python3 unavailable)\n'
+  skip "per-run metadata record test (timeout/python3 unavailable)"
 fi
 
 echo "== run index (index.jsonl) growth + row content (stub runs, no live CLI) =="
@@ -374,7 +377,7 @@ print("OK")
   esac
   rm -rf "$istub" "$itgt" "$ibase"
 else
-  printf '  skip run-index test (timeout/python3 unavailable)\n'
+  skip "run-index test (timeout/python3 unavailable)"
 fi
 
 echo "== signal extraction over fixture transcripts (present / absent, no live CLI) =="
@@ -409,7 +412,7 @@ STUBEOF
   assert_contains "signals: absent fixture -> cost unavailable"   "$absn" '"cost":"unavailable"'
   rm -rf "$sigdir"
 else
-  printf '  skip signal-extraction fixture test (timeout/python3 unavailable)\n'
+  skip "signal-extraction fixture test (timeout/python3 unavailable)"
 fi
 
 echo "== cross-agent summary block (stub fan-out, no live CLI) =="
@@ -436,7 +439,7 @@ if command -v timeout >/dev/null 2>&1; then
   assert_contains "summary: write fan-out notes target-wide verification" "$wsum_out" "target-wide"
   rm -rf "$wsumstub" "$wsumtgt" "$wsumodir"
 else
-  printf '  skip summary-block test (timeout unavailable)\n'
+  skip "summary-block test (timeout unavailable)"
 fi
 
 echo "== fan-out agreement signal (stub fan-out, no live CLI) =="
@@ -462,7 +465,7 @@ if command -v timeout >/dev/null 2>&1; then
     "$(PATH="$agok:$PATH" EXTERNAL_AGENTS_OUT="$nmod" bash "$RUN" --agent all --read-only --target "$nmgt" --prompt x 2>/dev/null)" "all agents left the tree unchanged"
   rm -rf "$agtgt" "$agok" "$agod" "$agf" "$afod" "$agm" "$amod" "$nmgt" "$nmod"
 else
-  printf '  skip agreement-signal test (timeout unavailable)\n'
+  skip "agreement-signal test (timeout unavailable)"
 fi
 
 echo "== opt-in JSON run summary (--json) shape validation (stub fan-out) =="
@@ -491,7 +494,7 @@ print("OK")
   case "$nojson" in *'"agreement"'*) bad "JSON: absent without --json" "JSON document appeared without the flag";; *) ok "JSON: absent without --json";; esac
   rm -rf "$jstub" "$jtgt" "$jod"
 else
-  printf '  skip JSON summary validation (timeout/python3 unavailable)\n'
+  skip "JSON summary validation (timeout/python3 unavailable)"
 fi
 
 echo "== transcript secret-redaction (stub agent, real redact path) =="
@@ -522,7 +525,7 @@ if command -v timeout >/dev/null 2>&1; then
   case "$red_file" in *"$SECRET"*) bad "redaction: raw secret absent from persisted transcript" "leaked to disk";; *) ok "redaction: raw secret absent from persisted transcript";; esac
   assert_contains "redaction: placeholder present in persisted transcript" "$red_file" "<REDACTED>"
 else
-  printf '  skip redaction tests (timeout unavailable)\n'
+  skip "redaction tests (timeout unavailable)"
 fi
 
 echo "== redaction false-positive guard (ordinary content survives) =="
@@ -537,7 +540,7 @@ if command -v timeout >/dev/null 2>&1; then
   assert_contains "guard: version string survives" "$fp_out" "v0.6.0"
   case "$fp_file" in *"<REDACTED>"*) bad "guard: ordinary content not over-redacted (persisted)" "redaction fired on disk";; *) ok "guard: ordinary content not over-redacted (persisted)";; esac
 else
-  printf '  skip redaction guard tests (timeout unavailable)\n'
+  skip "redaction guard tests (timeout unavailable)"
 fi
 
 echo "== transcript redaction assurance (both surfaces, mixed token shapes) =="
@@ -555,7 +558,7 @@ if command -v timeout >/dev/null 2>&1; then
   case "$asr_file" in *"$raw_kval"*) bad "assurance: TOKEN= value masked in persisted file" "leaked to disk";; *) ok "assurance: TOKEN= value masked in persisted file";; esac
   assert_contains "assurance: placeholder present after masking" "$asr_out" "<REDACTED>"
 else
-  printf '  skip redaction assurance tests (timeout unavailable)\n'
+  skip "redaction assurance tests (timeout unavailable)"
 fi
 
 echo "== redaction no-false-positive assurance (realistic transcript unchanged) =="
@@ -570,7 +573,7 @@ if command -v timeout >/dev/null 2>&1; then
   case "$na_file" in *"<REDACTED>"*) bad "no-false-positive: realistic transcript unchanged (persisted)" "over-redacted";; *) ok "no-false-positive: realistic transcript unchanged (persisted)";; esac
   assert_contains "no-false-positive: review content preserved verbatim" "$na_out" "build_argv() looks correct"
 else
-  printf '  skip redaction no-false-positive assurance (timeout unavailable)\n'
+  skip "redaction no-false-positive assurance (timeout unavailable)"
 fi
 
 echo "== post-write git verification + non-git warning (stub agent, write mode) =="
@@ -597,7 +600,7 @@ STUBEOF
   case "$nout" in *"git changes after write"*) bad "non-git target suppresses the verification block" "block appeared without a git baseline";; *) ok "non-git target suppresses the verification block";; esac
   rm -rf "$wstub" "$gtgt" "$godir" "$ntgt" "$nodir"
 else
-  printf '  skip post-write verification test (timeout unavailable)\n'
+  skip "post-write verification test (timeout unavailable)"
 fi
 
 echo "== live argv record == masked --dry-run argv (stub agent, real launch path) =="
@@ -622,7 +625,7 @@ if command -v timeout >/dev/null 2>&1; then
   assert_contains "live argv record uses the <PROMPT> placeholder" "$argv_rec" "<PROMPT>"
   rm -rf "$astub" "$atgt" "$aodir"
 else
-  printf '  skip live-argv-record test (timeout unavailable)\n'
+  skip "live-argv-record test (timeout unavailable)"
 fi
 
 echo "== live argv record secret-safety (a secret-bearing prompt never leaks) =="
@@ -644,7 +647,7 @@ if command -v timeout >/dev/null 2>&1; then
   assert_contains "argv record is the resolved codex read-only argv" "$srec" "codex exec -s read-only"
   rm -rf "$sstub" "$stgt" "$sodir"
 else
-  printf '  skip argv-record secret-safety test (timeout unavailable)\n'
+  skip "argv-record secret-safety test (timeout unavailable)"
 fi
 
 echo "== live-smoke sandbox fixture (disposable, git-backed, outside the plugin tree) =="
@@ -696,7 +699,7 @@ if command -v timeout >/dev/null 2>&1; then
   if PATH="$nmstub:$PATH" non_mutation_check codex >/dev/null 2>&1; then bad "enforced read-only: a mutation is a hard failure" "mutation not caught"; else ok "enforced read-only: a mutation is a hard failure"; fi
   rm -rf "$nmstub"
 else
-  printf '  skip enforced non-mutation test (timeout unavailable)\n'
+  skip "enforced non-mutation test (timeout unavailable)"
 fi
 
 echo "== live-smoke agy read-only best-effort report (mutation never fails) =="
@@ -718,7 +721,7 @@ if command -v timeout >/dev/null 2>&1; then
   case "$ag_mut" in *[Ee]nforced*not*|*not*enforced*) ok "agy best-effort: never claimed as enforced";; *[Ee]nforced*) bad "agy best-effort: never claimed as enforced" "claimed enforced";; *) ok "agy best-effort: never claimed as enforced";; esac
   rm -rf "$agstub"
 else
-  printf '  skip agy best-effort report test (timeout unavailable)\n'
+  skip "agy best-effort report test (timeout unavailable)"
 fi
 
 echo "== bump-version.sh lockstep write (mktemp fixture, real repo untouched) =="
@@ -810,7 +813,7 @@ if [ -n "$sc_jq" ] && [ -n "$sc_py" ]; then
   if [ "$sc_jq" = "$sc_py" ]; then ok "jq/python3 degrade identically on a malformed tier"
   else bad "jq/python3 degrade identically on a malformed tier" "backends diverged"; fi
 else
-  printf '  skip soft-malformed parity (could not run both backends)\n'
+  skip "soft-malformed parity (could not run both backends)"
 fi
 # (3) No agent enabled -> --agent all is refused with exit 2.
 nfx="$(mktemp)"
@@ -948,9 +951,9 @@ if command -v shellcheck >/dev/null 2>&1; then
     bad "scripts/*.sh are shellcheck-clean" "run: shellcheck scripts/run-agent.sh scripts/bump-version.sh"
   fi
 else
-  printf '  skip shellcheck (not installed)\n'
+  skip "shellcheck (not installed)"
 fi
 
 echo
-echo "tests: $PASS passed, $FAIL failed"
+echo "tests: $PASS passed, $FAIL failed, $SKIP skipped"
 [ "$FAIL" -eq 0 ]
