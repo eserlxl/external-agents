@@ -47,6 +47,9 @@ Three layers, one rule:
 prompt construction are all enforced in `run-agent.sh`, so they hold no matter how the script is
 invoked — never relocate a gate up into the skill or command.
 
+To **add an agent**, see [docs/extensibility.md](docs/extensibility.md) — it inventories every driver
+touch-point an added agent requires (and the config-side `agents.json` entry).
+
 ## Packaging contract (install-critical manifest fields)
 
 `.claude-plugin/plugin.json` must carry the metadata a host needs to **load** the plugin. These
