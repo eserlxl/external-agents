@@ -74,11 +74,35 @@ enforced_readonly() {  # agent
   case "$1" in codex|claude|cursor) return 0;; *) return 1;; esac
 }
 
-# non_mutation_check AGENT — run AGENT read-only against a fresh disposable sandbox and
-# assert the tree is byte-identical afterward. For an ENFORCED agent any change is a HARD
-# failure (returns 1). The tree_changes snapshot catches the mutation regardless of whether
-# the CLI's own enforcement held, so this independently proves the read-only guarantee.
-non_mutation_check() {  # agent
+# mutation_outcome AGENT CHANGES — print the per-agent read-only mutation verdict for the
+# tree_changes output CHANGES and return it. An ENFORCED agent (codex/claude/cursor) must be
+# byte-identical: any change is a HARD failure (return 1). agy is best-effort: the change is
+# reported but never asserted (always return 0). The verdict logic lives here once, shared by
+# smoke_agent and the standalone mutation checks below.
+mutation_outcome() {  # agent changes
+  local a="$1" changes="$2"
+  if enforced_readonly "$a"; then
+    if [ -z "$changes" ]; then
+      echo "live smoke: $a [read-only]  no mutation (tree byte-identical)"; return 0
+    fi
+    echo "live smoke: $a [read-only]  FAIL: enforced read-only mutated the tree:" >&2
+    printf '%s\n' "$changes" >&2; return 1
+  fi
+  if [ -z "$changes" ]; then
+    echo "live smoke: $a [read-only]  best-effort: tree unchanged (observed, not enforced)"
+  else
+    echo "live smoke: $a [read-only]  best-effort: tree CHANGED (agy --sandbox is best-effort, not enforced):"
+    printf '%s\n' "$changes"
+  fi
+  return 0
+}
+
+# non_mutation_check AGENT / agy_mutation_report — standalone single-check entrypoints that
+# run AGENT read-only against a fresh sandbox and apply mutation_outcome. They are the
+# reference mutation checks exercised directly by the offline suite (tests/run.sh); the live
+# run composes the same verdict inside smoke_agent.
+# shellcheck disable=SC2329  # invoked by the offline unit tests in tests/run.sh
+non_mutation_check() {  # agent (enforced: any change is a hard failure)
   local a="$1" sb out changes
   sb="$(make_sandbox)" || { echo "live smoke: $a  FAIL: could not create sandbox" >&2; return 1; }
   out="$(mktemp -d)"
@@ -86,20 +110,11 @@ non_mutation_check() {  # agent
     --timeout "$SMOKE_TIMEOUT" --prompt "$SMOKE_PROMPT" >/dev/null 2>&1
   changes="$(tree_changes "$sb")"
   rm -rf "$sb" "$out"
-  if [ -z "$changes" ]; then
-    echo "live smoke: $a [read-only]  no mutation (tree byte-identical)"
-    return 0
-  fi
-  echo "live smoke: $a [read-only]  FAIL: enforced read-only mutated the tree:" >&2
-  printf '%s\n' "$changes" >&2
-  return 1
+  mutation_outcome "$a" "$changes"
 }
 
-# agy_mutation_report — run agy read-only against a fresh sandbox and REPORT whether the tree
-# changed, explicitly labelled best-effort. agy read-only relies on --sandbox, which is NOT a
-# hard write barrier (see scripts/run-agent.sh), so a change is recorded as an OBSERVED, not
-# enforced, outcome and NEVER fails the harness. Always returns 0.
-agy_mutation_report() {
+# shellcheck disable=SC2329  # invoked by the offline unit tests in tests/run.sh
+agy_mutation_report() {  # agy (best-effort: a change is reported, never fails)
   local sb out changes
   sb="$(make_sandbox)" || { echo "live smoke: agy [read-only]  best-effort: could not create sandbox (skipped)"; return 0; }
   out="$(mktemp -d)"
@@ -107,13 +122,7 @@ agy_mutation_report() {
     --timeout "$SMOKE_TIMEOUT" --prompt "$SMOKE_PROMPT" >/dev/null 2>&1
   changes="$(tree_changes "$sb")"
   rm -rf "$sb" "$out"
-  if [ -z "$changes" ]; then
-    echo "live smoke: agy [read-only]  best-effort: tree unchanged (observed, not enforced)"
-  else
-    echo "live smoke: agy [read-only]  best-effort: tree CHANGED (agy --sandbox is best-effort, not enforced):"
-    printf '%s\n' "$changes"
-  fi
-  return 0
+  mutation_outcome agy "$changes"
 }
 
 # argv_equiv AGENT MODE SRC — prove the LIVE launch argv matches what --dry-run shows for
@@ -155,6 +164,39 @@ argv_equiv() {  # agent mode src
   fi
   echo "live smoke: $a [$mode/$src]  FAIL: live argv != dry-run argv (live=[$rec] dry=[$dry])" >&2
   return 1
+}
+
+# smoke_agent AGENT — the composed single-agent end-to-end live smoke: ONE read-only run of
+# AGENT against a fresh disposable sandbox (run_one's mechanics write .argv/.rc/.md), then
+# THREE signals are derived from that ONE run and reported together:
+#   1. argv-match  — the masked .argv record equals the --dry-run argv (the launch is correct).
+#   2. non-mutation — mutation_outcome: enforced agents hard-fail on any change; agy best-effort.
+#   3. transcript  — the run produced output (rc + bytes; the strict assertion is added next).
+# Returns 0 only when the required signals hold (argv-match + enforced non-mutation); agy's
+# best-effort mutation never fails the pass.
+smoke_agent() {  # agent
+  local a="$1" sb out proj rec dry changes rc bytes rv=0
+  sb="$(make_sandbox)" || { echo "live smoke: $a [e2e]  FAIL: could not create sandbox" >&2; return 1; }
+  out="$(mktemp -d)"; proj="$out/$(basename "$sb")"
+  EXTERNAL_AGENTS_OUT="$out" "$RUN" --agent "$a" --read-only --target "$sb" \
+    --timeout "$SMOKE_TIMEOUT" --prompt "$SMOKE_PROMPT" >/dev/null 2>&1
+  # 1. argv-match: the run's masked record vs the --dry-run argv for the same invocation.
+  rec="$(live_argv_record "$proj" "$a")"
+  dry="$("$RUN" --agent "$a" --read-only --target "$sb" --dry-run --prompt "$SMOKE_PROMPT" 2>/dev/null | sed -nE "s/^  $a +//p")"
+  if [ -n "$rec" ] && [ "$rec" = "$dry" ]; then
+    echo "live smoke: $a [e2e]  argv-match: ok"
+  else
+    echo "live smoke: $a [e2e]  argv-match: FAIL (live=[$rec] dry=[$dry])" >&2; rv=1
+  fi
+  # 2. non-mutation (enforced hard-fail / agy best-effort) from the same sandbox.
+  changes="$(tree_changes "$sb")"
+  mutation_outcome "$a" "$changes" || rv=1
+  # 3. transcript: rc + bytes from the run's artifacts (strict pass added by the next sub-phase).
+  rc="$(cat "$proj/$a.rc" 2>/dev/null || echo '?')"
+  bytes=$(wc -c <"$proj/$a.md" 2>/dev/null | tr -d ' ')
+  echo "live smoke: $a [e2e]  transcript: rc=$rc bytes=${bytes:-0}"
+  rm -rf "$sb" "$out"
+  return "$rv"
 }
 
 # main — the live run. Runs ONLY when this script is executed directly (see the guard at the
@@ -215,10 +257,10 @@ EOF
   fi
   echo "live smoke: verifying ${verify[*]}"
 
-  # Per-agent live checks: (1) argv equivalence across every (mode, prompt-source)
-  # build_argv path, and (2) read-only non-mutation — enforced agents (codex/claude/cursor)
-  # must leave the tree byte-identical; any change is a hard failure. (agy read-only is
-  # best-effort and reported separately by the next sub-phase. Transcript-success too.)
+  # Per-agent live checks: (1) the argv-coverage matrix across every (mode, prompt-source)
+  # build_argv path, then (2) the composed end-to-end smoke — for enforced agents one
+  # read-only run yields argv-match + non-mutation + transcript together (smoke_agent). agy
+  # is read with the best-effort report (generalised into smoke_agent by the next sub-phase).
   local fails=0 mode src
   for a in "${verify[@]}"; do
     for mode in ${argv_modes[@]+"${argv_modes[@]}"}; do
@@ -227,7 +269,7 @@ EOF
       done
     done
     if enforced_readonly "$a"; then
-      non_mutation_check "$a" || fails=$((fails + 1))
+      smoke_agent "$a" || fails=$((fails + 1))
     elif [ "$a" = "agy" ]; then
       agy_mutation_report   # best-effort: reports a change, never fails the run
     fi
@@ -236,7 +278,7 @@ EOF
     echo "live smoke: $fails live check(s) failed for ${verify[*]}" >&2
     return 1
   fi
-  echo "live smoke: all live checks passed for ${verify[*]} (argv equivalence + enforced read-only non-mutation)"
+  echo "live smoke: all live checks passed for ${verify[*]} (argv matrix + end-to-end smoke)"
   return 0
 }
 
