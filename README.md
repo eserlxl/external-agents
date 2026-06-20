@@ -256,6 +256,10 @@ files. So `fallback=1` means the agy quota fallback *actually swapped* the prima
 quota was checked), and the record never depends on parsing an agent's free-text output. The record
 is the single source the cross-agent summary and the opt-in JSON output (below) both render from.
 
+A `--agent all` fan-out also prints a compact **summary block** (`===== fan-out summary =====`) —
+one row per agent (`rc`, `model`, `tier`, `sec`, `bytes`, `fallback`) — as a digest beside the
+verbatim transcripts. Single-agent runs print no summary.
+
 ## Safety
 
 For the full trust-boundary analysis and the per-CLI enforcement matrix, see

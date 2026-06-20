@@ -688,6 +688,18 @@ for a in "${RUN[@]}"; do
   echo
   if [ "$rc" = "0" ] && [ "${bytes:-0}" -gt 0 ]; then ok=$((ok+1)); else fail=$((fail+1)); fi
 done
+# Cross-agent summary: a compact digest with one row per fan-out agent, rendered from the Phase
+# 4.1 records — beside (not instead of) the verbatim transcripts above. Fan-out only; single-agent
+# runs print no summary, and the transcript echo + the stderr tally are unchanged.
+if [ "${#RUN[@]}" -gt 1 ]; then
+  echo "===== fan-out summary ====="
+  printf '  %-7s %-3s %-26s %-7s %5s %8s %s\n' agent rc model tier sec bytes fallback
+  for rec in "${RECORDS[@]}"; do
+    IFS=$'\t' read -r s_a s_model s_tier _ _ s_rc s_sec s_bytes s_fb <<<"$rec"
+    printf '  %-7s %-3s %-26s %-7s %5s %8s %s\n' "$s_a" "$s_rc" "$s_model" "$s_tier" "$s_sec" "$s_bytes" "$s_fb"
+  done
+  echo
+fi
 # After a write run, PRODUCE the verification (not just recommend it): show what
 # actually changed in the target's git tree so the caller can inspect before trusting.
 if [ "$MODE" = "write" ] && [ -n "$TOP" ]; then
