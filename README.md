@@ -370,6 +370,11 @@ unchanged, while **agy** read-only is captured as **best-effort** (observed, nev
 enforced). The shared contract and per-recipe steps are documented in
 [docs/e2e-recipe.md](docs/e2e-recipe.md).
 
+```bash
+EXTERNAL_AGENTS_LIVE=1 bash tests/e2e/run-e2e.sh                 # all recipes, all reachable agents
+EXTERNAL_AGENTS_LIVE=1 bash tests/e2e/review-readonly.sh codex   # one recipe, one agent
+```
+
 ## Files
 
 ```

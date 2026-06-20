@@ -64,7 +64,31 @@ recipes do).
 ## Recipes
 
 Each recipe is a self-contained script under `tests/e2e/`, run via the `tests/e2e/run-e2e.sh`
-entry point. The per-recipe sections (read-only review, read-write edit, non-git write) are
-documented below as they are added.
+entry point. The per-recipe sections are documented below.
 
-<!-- per-recipe sections are appended by the Phase 3.2–3.4 plan items -->
+### Read-only review (`review-readonly.sh`)
+
+Drives each reachable agent through `run-agent.sh --read-only` with a fixed review prompt against a
+fresh fixture, then checks the run succeeded and (for enforced agents) left the tree byte-identical.
+
+- **Prompt:** `Review seed.txt and reply with one short observation. Do not edit anything.`
+  (override with `E2E_REVIEW_PROMPT`).
+- **Driver argv:** the recipe uses `run-agent.sh --read-only`, so each agent resolves to its enforced
+  read-only argv — e.g. `codex exec -s read-only -C <fixture> --skip-git-repo-check <PROMPT>`,
+  `claude -p <PROMPT> --allowedTools Read Grep Glob`, `cursor-agent -p --mode plan --trust --workspace
+  <fixture> -- <PROMPT>`, `agy -p <PROMPT> --sandbox --add-dir <fixture>`.
+- **Expected transcript:** a non-empty, redacted response with `rc=0` (`bytes>0`). Per-run evidence
+  lands under `$EXTERNAL_AGENTS_OUT/e2e/review-readonly/<agent>/`: `argv`, `pre.sha`, `pre.status`,
+  `post.status`, `post.diffstat`, `run.txt` (rc/sec/bytes/transcript path), and `driver.err`.
+- **No-mutation:** enforced agents (`codex`/`claude`/`cursor`) — `post.status` MUST be empty; any
+  change is a **hard failure**. agy — **best-effort**: the change is observed and the driver's
+  best-effort warning captured, never asserted (see *Read-only enforcement in the recipes*).
+- **Opt-in/skip:** unset `EXTERNAL_AGENTS_LIVE` → the recipe prints a skip line and exits 0; an
+  unreachable agent is skipped cleanly.
+
+```bash
+EXTERNAL_AGENTS_LIVE=1 bash tests/e2e/review-readonly.sh codex   # one agent
+EXTERNAL_AGENTS_LIVE=1 bash tests/e2e/run-e2e.sh                 # all reachable agents, all recipes
+```
+
+<!-- read-write edit + non-git write sections are appended by the Phase 3.3–3.4 plan items -->
