@@ -264,6 +264,49 @@ quota_probe() {
     *)                  status=available;;
   esac
   echo "live smoke: agy quota probe  status=$status resolved-model='$model' (no wakeup)"
+
+  # Schema shape — sanitised evidence (keys/types and array item-key NAMES only; NEVER any
+  # percentage value or account identifier) recorded under the transcript dir as a drift
+  # detector for the keys agy_model_status reads. An empty CLI output (IDE closed) is recorded
+  # as 'unavailable' — a degraded, non-failing state.
+  local raw shape
+  # shellcheck disable=SC2086 # AGY_QUOTA_CMD is "cmd + flags"; intentional word-split (mirrors the driver).
+  raw="$(timeout 20 $AGY_QUOTA_CMD 2>/dev/null)" || true
+  shape="$(printf '%s' "$raw" | python3 -c '
+import json, sys
+try:
+    d = json.load(sys.stdin)
+except Exception:
+    print("unavailable: quota CLI produced no usable JSON (IDE closed / not logged in)"); sys.exit(0)
+if not isinstance(d, dict):
+    print("unavailable: top-level is not a JSON object"); sys.exit(0)
+def ty(v): return type(v).__name__
+parts = []
+for k, v in d.items():
+    if isinstance(v, list) and v and isinstance(v[0], dict):
+        parts.append("%s: array[object] item-keys=%s" % (k, sorted(v[0].keys())))
+    elif isinstance(v, list):
+        parts.append("%s: array" % k)
+    else:
+        parts.append("%s: %s" % (k, ty(v)))
+print("; ".join(parts))
+' 2>/dev/null)"
+  [ -n "$shape" ] || shape="unavailable: no quota output"
+  echo "live smoke: agy quota schema: $shape"
+  mkdir -p "$LIVE_OUT" 2>/dev/null && printf '%s\n' "$shape" >"$LIVE_OUT/agy-quota-schema.txt" 2>/dev/null
+  case "$shape" in
+    *unavailable*) : ;;  # IDE closed / no usable output — degraded, not a failure
+    *)
+      local k has_all=1
+      for k in models label remainingPercentage isExhausted; do
+        case "$shape" in *"$k"*) ;; *) has_all=0;; esac
+      done
+      if [ "$has_all" = 1 ]; then
+        echo "live smoke: agy quota schema: required keys present (models/label/remainingPercentage/isExhausted)"
+      else
+        echo "live smoke: agy quota schema  FAIL: expected keys not all present in the real output" >&2; rv=1
+      fi;;
+  esac
   return "$rv"
 }
 
