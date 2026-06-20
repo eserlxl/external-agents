@@ -698,6 +698,9 @@ if [ "${#RUN[@]}" -gt 1 ]; then
     IFS=$'\t' read -r s_a s_model s_tier _ _ s_rc s_sec s_bytes s_fb <<<"$rec"
     printf '  %-7s %-3s %-26s %-7s %5s %8s %s\n' "$s_a" "$s_rc" "$s_model" "$s_tier" "$s_sec" "$s_bytes" "$s_fb"
   done
+  # On a write fan-out every agent shares ONE target tree, so the post-write git verification
+  # below is TARGET-WIDE — it cannot attribute a change to a specific agent. Say so explicitly.
+  [ "$MODE" = "write" ] && echo "  note: write fan-out — the 'git changes after write' block is target-wide (all agents share one tree), not per-agent attribution."
   echo
 fi
 # After a write run, PRODUCE the verification (not just recommend it): show what
