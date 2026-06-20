@@ -25,7 +25,9 @@ if [ "$LIVE" != "1" ]; then
   exit 0
 fi
 
-EDIT_PROMPT="${E2E_EDIT_PROMPT:-Append a single line that reads exactly 'reviewed-ok' to $E2E_FIXTURE_SEED. Make only that one change.}"
+# Deterministic, reversible edit: append the known marker line to the seed file, so the expected
+# diff is predictable across agents.
+EDIT_PROMPT="${E2E_EDIT_PROMPT:-Append one new line to $E2E_FIXTURE_SEED whose exact content is: $E2E_FIXTURE_MARKER — and make only that single change.}"
 E2E_OUT="${EXTERNAL_AGENTS_OUT:-$HOME/.external-agents/logs}/e2e/edit-readwrite"
 TIMEOUT="${EXTERNAL_AGENTS_LIVE_TIMEOUT:-120}"
 
@@ -36,10 +38,11 @@ if [ "${#agents[@]}" -eq 0 ]; then
 fi
 [ "${#agents[@]}" -gt 0 ] || { echo "e2e edit-readwrite: no agents to run (exit 0)"; exit 0; }
 
+# One fixture, reset to its initial commit before each agent so every run starts identically.
+fx="$(e2e_make_fixture)" || { echo "e2e edit-readwrite: FAIL: could not create fixture" >&2; exit 1; }
 rv=0
 for a in "${agents[@]}"; do
-  # A fresh fixture per agent gives each a clean baseline (equivalent to a reset between agents).
-  fx="$(e2e_make_fixture)" || { echo "e2e edit-readwrite: $a  FAIL: could not create fixture" >&2; rv=1; continue; }
+  e2e_fixture_reset "$fx"
   ev="$E2E_OUT/$a"; out="$(mktemp -d)"; proj="$out/$(basename "$fx")"
   e2e_capture_pre "$fx" "$ev"
   # Capture the driver's stdout (it PRODUCES the post-write verification block) and stderr.
@@ -68,6 +71,7 @@ for a in "${agents[@]}"; do
   else
     echo "e2e edit-readwrite: $a  FAIL: post-write verification block missing or does not name the changed file" >&2; rv=1
   fi
-  rm -rf "$fx" "$out"
+  rm -rf "$out"
 done
+rm -rf "$fx"
 exit "$rv"

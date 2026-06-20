@@ -648,6 +648,15 @@ if [ -n "$fx" ] && [ -d "$fx" ]; then
   if [ -f "$fx/$E2E_FIXTURE_SEED" ]; then ok "E2E fixture has the known seed file ($E2E_FIXTURE_SEED)"; else bad "E2E fixture has the known seed file" "missing $E2E_FIXTURE_SEED"; fi
   if [ "$(e2e_fixture_commit_count "$fx")" = "1" ]; then ok "E2E fixture has exactly one initial commit"; else bad "E2E fixture has exactly one initial commit" "got $(e2e_fixture_commit_count "$fx") commits"; fi
   if [ -z "$(git -C "$fx" status --porcelain 2>/dev/null)" ]; then ok "E2E fixture starts clean"; else bad "E2E fixture starts clean" "unexpected dirty state"; fi
+  # e2e_fixture_reset must restore the fixture to its initial commit (drop edits + untracked).
+  printf '%s\n' "$E2E_FIXTURE_MARKER" >>"$fx/$E2E_FIXTURE_SEED"   # deterministic edit
+  printf 'junk\n' >"$fx/untracked.txt"                            # untracked addition
+  e2e_fixture_reset "$fx"
+  if [ -z "$(git -C "$fx" status --porcelain 2>/dev/null)" ] && [ ! -f "$fx/untracked.txt" ]; then
+    ok "e2e_fixture_reset restores the fixture to its initial commit"
+  else
+    bad "e2e_fixture_reset restores the fixture to its initial commit" "fixture still dirty after reset"
+  fi
   rm -rf "$fx"
 else
   bad "e2e_make_fixture produced a fixture" "no path returned"
