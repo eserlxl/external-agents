@@ -1801,6 +1801,22 @@ rm -rf "$cdir"
 assert_contains "--check prints the preflight header"        "$chk_out" "external-agents preflight:"
 assert_contains "--check probes cursor as the cursor-agent binary" "$chk_out" "need cursor-agent on PATH"
 assert_exit     "--check exits non-zero when agent CLIs are missing" 1 "$chk_rc"
+# Phase 2.2: the antigravity-usage info line is a `command -v` PATH probe (resolving the same binary as
+# the runtime AGY_QUOTA_CMD), info-only and NON-SPENDING. (a) absent (the restricted run above) reports
+# "not on PATH"; (b) present, via a stub that writes a sentinel IF EXECUTED, reports "present" yet the
+# sentinel stays absent — proving --check probes (command -v) and never spends quota.
+assert_contains "--check: antigravity-usage absent -> info-only 'not on PATH'" "$chk_out" "info agy-qta antigravity-usage not on PATH"
+agqd="$(mktemp -d)"; mk_restricted_bin "$agqd"
+agqsent="$agqd/SPENT"
+printf '#!/usr/bin/env bash\ntouch "%s"\necho spent\n' "$agqsent" >"$agqd/bin/antigravity-usage"; chmod +x "$agqd/bin/antigravity-usage"
+agqout="$(PATH="$agqd/bin" "$agqd/bin/bash" "$RUN" --check 2>&1)"
+assert_contains "--check: antigravity-usage present -> info-only 'present'" "$agqout" "info agy-qta antigravity-usage present"
+if [ -e "$agqsent" ]; then
+  bad "--check: antigravity-usage probe spends NO quota (command -v only, never executed)" "the quota CLI was executed by --check"
+else
+  ok "--check: antigravity-usage probe spends NO quota (command -v only, never executed)"
+fi
+rm -rf "$agqd"
 
 echo "== --check pass semantics (scoped agent present -> 0 missing, exit 0) =="
 # The documented pass criterion (0 missing / exit 0) must be test-backed, not only the missing case
