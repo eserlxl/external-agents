@@ -114,6 +114,25 @@ lockstep version), with the upgrade variant asserting `--version` advances acros
 arming switch it is a clean no-op, exactly like the live smoke harness — the procedure is in
 [RELEASING.md](RELEASING.md).
 
+### Per-agent auth prerequisites (readiness)
+
+`--check` proves an agent's CLI is **present**; this reference is the **readiness** contract — the
+exact one-time auth step each agent needs and what "ready" means. It is keyed to the driver's agent
+names and the binaries `agent_bin` resolves in `scripts/run-agent.sh`. Do the auth step once, then
+confirm a real round-trip with the opt-in [live smoke](#live-smoke-opt-in). These are **auth steps
+only** — no key or token value belongs in any committed file.
+
+| Agent | Binary on `PATH` | One-time auth step | "Ready" means |
+|-------|------------------|--------------------|---------------|
+| `codex` | `codex` | Sign in to the `codex` CLI (its own login). | `codex` present **and** an armed live smoke round-trips. |
+| `agy` | `agy` | Sign in to Antigravity / `agy` (its own login). | `agy` present **and** armed live smoke round-trips; for quota-aware fallback also install `antigravity-usage` (below). |
+| `cursor` | `cursor-agent` | Run `cursor-agent login`, **or** set the `CURSOR_API_KEY` environment variable. | `cursor-agent` present **and** armed live smoke round-trips. |
+| `claude` | `claude` | Authenticate the `claude` CLI (Claude Code sign-in / API key in your environment). | `claude` present **and** armed live smoke round-trips. |
+| `antigravity-usage` *(optional)* | `antigravity-usage` | `npm i -g antigravity-usage`, then `antigravity-usage login` (or keep the Antigravity IDE open). | Present on `PATH` so agy's [quota-aware fallback](#agy-quota-aware-fallback-antigravity) is active. **Never required** — its absence just means high/xhigh always use the Gemini fallback. |
+
+Readiness is always an explicit, opt-in act: the offline gate verifies **presence** only (via
+`--check`) and never performs any of the auth steps above.
+
 ## Usage
 
 Natural language (skill):
