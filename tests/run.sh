@@ -681,6 +681,39 @@ else
   skip "live-argv-record test (timeout unavailable)"
 fi
 
+echo "== driver argv matrix: masked launch argv == --dry-run argv across modes × prompt sources =="
+# The live argv_equiv matrix (tests/live-smoke.sh) proves, per agent, that the REAL launch argv equals
+# the --dry-run argv across read-only/read-write × --prompt/--prompt-file. Pin the same coverage OFFLINE
+# (stub codex, no real CLI) so a regression that drops a mode or a prompt source from the argv path
+# fails the gate — not only the single read-only/--prompt case the block above covers. Each case also
+# re-asserts the prompt is masked to <PROMPT> in the record (no secret leak via either prompt source).
+if command -v timeout >/dev/null 2>&1; then
+  amx_stub="$(mktemp -d)"; printf '#!/usr/bin/env bash\ntrue\n' >"$amx_stub/codex"; chmod +x "$amx_stub/codex"
+  amx_pf="$(mktemp)"; printf '%s' "MATRIX-PROMPT-SECRET" >"$amx_pf"
+  amx_check() {  # mode-flag yes-flag prompt-source label
+    local modeflag="$1" yes="$2" src="$3" label="$4" tgt out rec dry
+    local p=() pargs=()
+    [ -n "$yes" ] && p=("$yes")
+    if [ "$src" = "prompt-file" ]; then pargs=(--prompt-file "$amx_pf"); else pargs=(--prompt "MATRIX-PROMPT-SECRET"); fi
+    tgt="$(mktemp -d)"; out="$(mktemp -d)"
+    PATH="$amx_stub:$PATH" EXTERNAL_AGENTS_OUT="$out" \
+      bash "$RUN" --agent codex "$modeflag" "${p[@]}" --target "$tgt" --timeout 30 "${pargs[@]}" >/dev/null 2>&1
+    rec="$(cat "$out/$(basename "$tgt")/codex.argv" 2>/dev/null)"
+    dry="$(bash "$RUN" --agent codex "$modeflag" "${p[@]}" --target "$tgt" --dry-run "${pargs[@]}" 2>/dev/null | sed -nE 's/^  codex +//p')"
+    if [ -n "$rec" ] && [ "$rec" = "$dry" ]; then ok "argv-matrix: $label  launch == dry-run"; else bad "argv-matrix: $label launch == dry-run" "rec=[$rec] dry=[$dry]"; fi
+    case "$rec" in *"MATRIX-PROMPT-SECRET"*) bad "argv-matrix: $label prompt masked (no leak)" "prompt text leaked into the argv record";; *) ok "argv-matrix: $label prompt masked (no leak)";; esac
+    rm -rf "$tgt" "$out"
+  }
+  amx_check --read-only ""     prompt      "read-only/--prompt"
+  amx_check --read-only ""     prompt-file "read-only/--prompt-file"
+  amx_check --write     --yes  prompt      "read-write/--prompt"
+  amx_check --write     --yes  prompt-file "read-write/--prompt-file"
+  rm -f "$amx_pf"; rm -rf "$amx_stub"
+  unset -f amx_check
+else
+  skip "driver argv matrix oracle (timeout unavailable)"
+fi
+
 echo "== live argv record secret-safety (a secret-bearing prompt never leaks) =="
 # Even when the prompt embeds a secret-shaped token, the argv record masks the whole prompt
 # at PROMPT_IDX to <PROMPT> — so neither the secret nor the prompt text reaches the record,
