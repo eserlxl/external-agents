@@ -805,6 +805,36 @@ print("OK")
     *"stub transcript text"*) bad "index: rows carry no transcript text" "transcript leaked into the index";;
     *)                        ok  "index: rows carry no transcript text";;
   esac
+  # Phase 4.1: pin the row contract — every line is ONE valid JSON object = the run_id/timestamp/project
+  # prefix PLUS the embedded per-run meta record (no row is a bare prefix or a partial/invalid object).
+  irow="$(python3 -c '
+import json, sys
+prefix = {"run_id", "timestamp", "project"}
+meta = {"agent","model","tier","effort","mode","target","rc","sec","bytes","fallback","error_class","attempts","retried","signals"}
+n = 0
+for ln in open(sys.argv[1]):
+    ln = ln.strip()
+    if not ln: continue
+    try:
+        r = json.loads(ln)
+    except Exception:
+        print("INVALID_JSON"); sys.exit(0)
+    if not isinstance(r, dict): print("NOT_OBJECT"); sys.exit(0)
+    if not prefix <= set(r): print("NO_PREFIX"); sys.exit(0)
+    if not meta <= set(r): print("NO_META"); sys.exit(0)
+    n += 1
+print("OK %d" % n if n > 0 else "EMPTY")
+' "$ibase/index.jsonl" 2>/dev/null)"
+  assert_contains "index: each line is one valid JSON object = prefix + embedded meta record" "$irow" "OK"
+  # Append-only: a further run APPENDS — the prior content is a byte-unchanged prefix, +1 row.
+  ipre="$(cat "$ibase/index.jsonl")"
+  PATH="$istub:$PATH" EXTERNAL_AGENTS_OUT="$ibase" bash "$RUN" --agent codex --effort high --read-only --target "$itgt" --prompt z >/dev/null 2>&1
+  ipost="$(cat "$ibase/index.jsonl")"
+  if [ "${ipost:0:${#ipre}}" = "$ipre" ] && [ "$(printf '%s\n' "$ipost" | grep -c .)" = "5" ]; then
+    ok "index: append-only — a re-run appends one row, prior rows byte-unchanged"
+  else
+    bad "index: append-only — a re-run appends one row, prior rows byte-unchanged" "prior content changed or wrong row count"
+  fi
   rm -rf "$istub" "$itgt" "$ibase"
 else
   skip "run-index test (timeout/python3 unavailable)"
