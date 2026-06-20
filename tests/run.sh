@@ -37,10 +37,13 @@ dry() {
 # mk_restricted_bin DIR — populate DIR/bin with the shell utilities run-agent.sh needs
 # but NO agent CLIs and NO jq, so a run under PATH=DIR/bin forces the python3 config
 # backend and reports every agent missing. Shared by the parity / --check / malformed tests.
+# Includes mkdir + timeout so a full stub fan-out (which mkdir's $OUT/$INDEX_BASE and
+# launches agents under timeout) also runs cleanly under the forced python3 backend — used
+# by the JSON-emitter parity test below.
 mk_restricted_bin() {
   mkdir -p "$1/bin"
   local t s
-  for t in bash env python3 grep dirname basename cat sed sort tr cut wc paste date mktemp git head tail; do
+  for t in bash env python3 grep dirname basename cat sed sort tr cut wc paste date mktemp git head tail mkdir rm timeout; do
     s="$(command -v "$t" 2>/dev/null)" && ln -s "$s" "$1/bin/$t" 2>/dev/null || true
   done
 }
@@ -497,6 +500,47 @@ print("OK")
   rm -rf "$jstub" "$jtgt" "$jod"
 else
   skip "JSON summary validation (timeout/python3 unavailable)"
+fi
+
+echo "== jq / python3 JSON-emitter parity (meta.json, index row, --json doc byte-identical) =="
+# The cfg parity block above gates only the config READ ops. The driver also has three JSON
+# EMITTERS — write_meta_json (<a>.meta.json), append_index_row (index.jsonl), and the --json
+# summary — each with a jq branch and a python3 branch. They are exercised only under whichever
+# backend is present (jq on CI), so a one-sided edit to either branch could diverge uncaught.
+# Gate it: run ONE stubbed --agent all fan-out under jq, and again under a python3-only PATH, then
+# assert the emitted JSON matches across backends. AGY_QUOTA_CMD=false in both forces agy to fall
+# back deterministically, isolating emitter parity from live quota state (mirrors the cfg block).
+if command -v jq >/dev/null 2>&1 && command -v timeout >/dev/null 2>&1 && command -v python3 >/dev/null 2>&1; then
+  estub="$(mktemp -d)"
+  for b in agy codex cursor-agent; do printf '#!/usr/bin/env bash\necho "resp text"\n' >"$estub/$b"; chmod +x "$estub/$b"; done
+  erb="$(mktemp -d)"; mk_restricted_bin "$erb"   # python3, NO jq -> forces JSON_BACKEND=py
+  # Mask the run-unique fields (target path, timestamp, run_id, project) so only the structural
+  # JSON shape + resolved values are compared across the two backends.
+  emask() { sed -E -e 's#"target":"[^"]*"#"target":"T"#g' -e 's#"timestamp":"[^"]*"#"timestamp":"TS"#g' \
+                   -e 's#"run_id":"[^"]*"#"run_id":"RID"#g' -e 's#"project":"[^"]*"#"project":"P"#g'; }
+  emit_run() {  # tag  pathprefix  bashbin
+    local tag="$1" pp="$2" bb="$3" etgt eod eproj
+    etgt="$(mktemp -d)"; eod="$(mktemp -d)"
+    EXTERNAL_AGENTS_AGY_QUOTA_CMD=false PATH="$estub:$pp" EXTERNAL_AGENTS_OUT="$eod" \
+      "$bb" "$RUN" --agent all --effort high --read-only --json --target "$etgt" --prompt x >"$eod/stdout" 2>/dev/null
+    eproj="$eod/$(basename "$etgt")"
+    emask <"$eproj/codex.meta.json" >"$estub/$tag.meta" 2>/dev/null
+    grep '"agent":"codex"' "$eod/index.jsonl" 2>/dev/null | emask >"$estub/$tag.row"
+    tail -1 "$eod/stdout" >"$estub/$tag.json" 2>/dev/null
+    rm -rf "$etgt" "$eod"
+  }
+  emit_run jq "$PATH"      "bash"
+  emit_run py "$erb/bin"   "$erb/bin/bash"
+  if [ -s "$estub/jq.meta" ] && [ -s "$estub/py.meta" ]; then
+    if [ "$(cat "$estub/jq.meta")" = "$(cat "$estub/py.meta")" ]; then ok "emitter parity: .meta.json identical (jq == python3)"; else bad "emitter parity: .meta.json identical (jq == python3)" "backends diverged"; fi
+    if [ "$(cat "$estub/jq.row")"  = "$(cat "$estub/py.row")"  ]; then ok "emitter parity: index.jsonl row identical (jq == python3)"; else bad "emitter parity: index.jsonl row identical (jq == python3)" "backends diverged"; fi
+    if [ "$(cat "$estub/jq.json")" = "$(cat "$estub/py.json")" ]; then ok "emitter parity: --json doc identical (jq == python3)"; else bad "emitter parity: --json doc identical (jq == python3)" "backends diverged"; fi
+  else
+    skip "JSON-emitter parity (a backend produced no record in this environment)"
+  fi
+  rm -rf "$estub" "$erb"
+else
+  skip "JSON-emitter parity (jq/python3/timeout unavailable)"
 fi
 
 echo "== transcript secret-redaction (stub agent, real redact path) =="
