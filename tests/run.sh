@@ -741,6 +741,28 @@ print("OK" if d.get("fallback") is True else "NOT_TRUE")
     *"stub transcript text"*) bad "meta: record carries no transcript text" "transcript leaked into meta.json";;
     *)                        ok  "meta: record carries no transcript text";;
   esac
+  # (5) Phase 4.1: pin the EXACT meta.json key set + per-field JSON types, so adding, removing, or
+  # retyping a field in write_meta_json fails the offline suite (complements the schema drift guard).
+  meta_contract="$(python3 -c '
+import json, sys
+d = json.load(open(sys.argv[1]))
+top = {"agent","model","tier","effort","mode","target","rc","sec","bytes","fallback","timestamp","error_class","attempts","retried","signals"}
+errs = []
+if set(d) != top: errs.append("top-keys " + repr(sorted(set(d) ^ top)))
+if set(d.get("signals", {})) != {"tokens", "cost"}: errs.append("signals-keys")
+def isnum(x): return isinstance(x, (int, float)) and not isinstance(x, bool)
+for k in ("agent","model","tier","effort","mode","target","timestamp","error_class"):
+    if not isinstance(d.get(k), str): errs.append("type:" + k)
+for k in ("rc","sec","bytes","attempts"):
+    if not isnum(d.get(k)): errs.append("type:" + k)
+for k in ("fallback","retried"):
+    if not isinstance(d.get(k), bool): errs.append("type:" + k)
+sg = d.get("signals", {})
+if not (isnum(sg.get("tokens")) or isinstance(sg.get("tokens"), str)): errs.append("type:signals.tokens")
+if not isinstance(sg.get("cost"), str): errs.append("type:signals.cost")
+print("OK" if not errs else "FAIL " + "; ".join(errs))
+' "$mproj/codex.meta.json" 2>/dev/null)"
+  assert_contains "meta: exact key set + per-field JSON types pinned (add/remove/retype fails)" "$meta_contract" "OK"
   rm -rf "$mstub" "$mtgt" "$modir"
 else
   skip "per-run metadata record test (timeout/python3 unavailable)"
