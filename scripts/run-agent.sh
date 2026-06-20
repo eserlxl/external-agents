@@ -546,8 +546,9 @@ else PROJECT="$LEAF"; fi
 if [ "$DRYRUN" = "0" ]; then mkdir -p "$OUT"; OUT="$(cd "$OUT" && pwd -P)"; fi
 # Run index (Phase 5.2): an append-only JSON-Lines history under the transcript base — the
 # EXTERNAL_AGENTS_OUT base (default ~/.external-agents/logs), or the explicit --out dir when given.
-# RUN_ID groups the agents of this one invocation (a --agent all fan-out shares it).
-RUN_ID="$(date -u +%Y%m%dT%H%M%SZ 2>/dev/null || echo run)-$$"
+# RUN_ID groups the agents of this one invocation (a --agent all fan-out shares it). A pipeline
+# (scripts/run-pipeline.sh) sets EXTERNAL_AGENTS_RUN_ID so all its stages share ONE pipeline run_id.
+RUN_ID="${EXTERNAL_AGENTS_RUN_ID:-$(date -u +%Y%m%dT%H%M%SZ 2>/dev/null || echo run)-$$}"
 if [ -n "$OUT_SET" ]; then INDEX_BASE="$OUT"; else INDEX_BASE="${EXTERNAL_AGENTS_OUT:-$HOME/.external-agents/logs}"; fi
 INDEX="$INDEX_BASE/index.jsonl"
 
