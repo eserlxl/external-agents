@@ -969,6 +969,31 @@ else
   bad "e2e_make_fixture produced a fixture for capture" "no path"
 fi
 
+echo "== e2e edit-readwrite recipe oracle (stub-driven, offline) =="
+# Drive the full read-write recipe against a stub agent (no real CLI). A stub that appends the exact
+# marker to the seed file must PASS the recipe; a stub appending wrong content must FAIL the
+# strengthened marker oracle. EXTERNAL_AGENTS_LIVE=1 arms the recipe; the stub keeps it offline.
+# ($E2E_FIXTURE_MARKER / $E2E_FIXTURE_SEED were sourced from the fixture lib above.)
+if command -v timeout >/dev/null 2>&1; then
+  erw_good="$(mktemp -d)"; erw_god="$(mktemp -d)"
+  printf '#!/usr/bin/env bash\nprintf "did the edit\\n"\nprintf "%%s\\n" "%s" >> "%s"\n' \
+    "$E2E_FIXTURE_MARKER" "$E2E_FIXTURE_SEED" >"$erw_good/codex"; chmod +x "$erw_good/codex"
+  erw_out="$(PATH="$erw_good:$PATH" EXTERNAL_AGENTS_LIVE=1 EXTERNAL_AGENTS_OUT="$erw_god" \
+    bash "$ROOT/tests/e2e/edit-readwrite.sh" codex 2>&1)"; erw_rc=$?
+  assert_exit     "edit-readwrite recipe: correct marker -> pass (exit 0)" 0 "$erw_rc"
+  assert_contains "edit-readwrite recipe: marker-content asserted"          "$erw_out" "marker-content: seed file contains the expected"
+  rm -rf "$erw_good" "$erw_god"
+  erw_bad="$(mktemp -d)"; erw_bod="$(mktemp -d)"
+  printf '#!/usr/bin/env bash\nprintf "did the edit\\n"\nprintf "%%s\\n" "WRONG-CONTENT" >> "%s"\n' \
+    "$E2E_FIXTURE_SEED" >"$erw_bad/codex"; chmod +x "$erw_bad/codex"
+  PATH="$erw_bad:$PATH" EXTERNAL_AGENTS_LIVE=1 EXTERNAL_AGENTS_OUT="$erw_bod" \
+    bash "$ROOT/tests/e2e/edit-readwrite.sh" codex >/dev/null 2>&1
+  assert_exit "edit-readwrite recipe: wrong content -> fail (non-zero)" 1 "$?"
+  rm -rf "$erw_bad" "$erw_bod"
+else
+  skip "e2e edit-readwrite recipe oracle (timeout unavailable)"
+fi
+
 echo "== e2e recipe dispatch drift guard (run-e2e.sh list == recipe files) =="
 # run-e2e.sh hardcodes the recipes it dispatches (`for recipe in ...`); a recipe file added without
 # updating that list — or removed while still listed — would be silently never run. Assert the

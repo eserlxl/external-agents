@@ -62,6 +62,14 @@ for a in "${agents[@]}"; do
   else
     echo "e2e edit-readwrite: $a  FAIL: write run produced no change in the fixture" >&2; rv=1
   fi
+  # The edit must be the requested marker line appended to the SEED file — not merely "some change"
+  # (a wrong file or wrong content would otherwise pass). The fixture defines the marker for exactly
+  # this predictable diff (tests/e2e/lib/fixture.sh).
+  if grep -qxF -- "$E2E_FIXTURE_MARKER" "$fx/$E2E_FIXTURE_SEED" 2>/dev/null; then
+    echo "e2e edit-readwrite: $a  marker-content: seed file contains the expected '$E2E_FIXTURE_MARKER' line"
+  else
+    echo "e2e edit-readwrite: $a  FAIL: seed file does not contain the expected marker line '$E2E_FIXTURE_MARKER'" >&2; rv=1
+  fi
   # The driver PRODUCES a post-write verification block on a git target — assert it ran and named
   # the actual changed path (the driver's printed block echoes git status --porcelain / diff --stat).
   changed_path="$(awk 'NR==1{print $2}' "$ev/post.status" 2>/dev/null)"
