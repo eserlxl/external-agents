@@ -87,3 +87,25 @@ freely during development; tag and push only at the milestone.
 
 After pushing, CI runs the offline gate (`shellcheck` + `tests/run.sh`) on the release commit; create
 a GitHub release from the pushed tag if you publish one.
+
+## Verify the tag matches the version
+
+The lockstep contract ties `.claude-plugin/plugin.json`'s version to the skill frontmatter, the
+README badge, and the latest `CHANGELOG.md` header. The **one** version surface that lives outside the
+bumper — the git tag — must also match, or the release is mis-tagged. After tagging (step 6) and
+**before** pushing the tag (step 7), confirm the annotated tag name equals `v<version>`:
+
+```bash
+ver="$(python3 -c "import json; print(json.load(open('.claude-plugin/plugin.json'))['version'])")"
+tag="$(git describe --tags --exact-match 2>/dev/null)"
+if [ "$tag" = "v$ver" ]; then
+  echo "OK: tag $tag matches plugin.json version $ver"
+else
+  echo "MISMATCH: tag '${tag:-<none>}' != v$ver — retag before pushing"; exit 1
+fi
+```
+
+A mismatch means the tag was cut against the wrong commit or a stale version — delete and recreate it
+(`git tag -d vX.Y.Z`, then redo step 6) so the published tag always equals the version in the lockstep
+surfaces. Because plugin.json drives the lockstep, checking the tag against it transitively checks the
+tag against the skill frontmatter, README badge, and CHANGELOG header too.
