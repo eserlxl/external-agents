@@ -229,6 +229,45 @@ else
   skip "fixture-agent extensibility oracle (python3 unavailable)"
 fi
 
+echo "== fixture-agent record/index/argv artifacts (agent-agnostic emitters; no emitter change) =="
+# Prove the record/index/argv emitters are agent-agnostic: the fixture agent's REAL stub run emits
+# fixture.meta.json (standard fields), an index.jsonl row, and a masked fixture.argv byte-identical to
+# its --dry-run argv — none of which the emitters know about "fixture". Reuses make_fixture_driver.
+if command -v timeout >/dev/null 2>&1 && command -v python3 >/dev/null 2>&1; then
+  nad="$(mktemp -d)"; make_fixture_driver "$nad"
+  nastub="$(mktemp -d)"; printf '#!/usr/bin/env bash\necho "fixture stub output"\n' >"$nastub/fixbin"; chmod +x "$nastub/fixbin"
+  natgt="$(mktemp -d)"; naod="$(mktemp -d)"
+  na_dry="$(PATH="$nastub:$PATH" bash "$nad/run-agent.sh" --conf "$nad/agents.json" --agent fixture --read-only --target "$natgt" --dry-run --prompt x 2>/dev/null | sed -nE 's/^  fixture +//p')"
+  PATH="$nastub:$PATH" EXTERNAL_AGENTS_OUT="$naod" bash "$nad/run-agent.sh" --conf "$nad/agents.json" --agent fixture --read-only --target "$natgt" --prompt x >/dev/null 2>&1
+  naproj="$naod/$(basename "$natgt")"
+  if [ -f "$naproj/fixture.meta.json" ]; then
+    nam="$(python3 -c '
+import json, sys
+d = json.load(open(sys.argv[1]))
+req = {"agent","model","tier","effort","mode","target","rc","sec","bytes","fallback","timestamp","error_class","signals"}
+print("OK" if (req <= set(d) and d["agent"] == "fixture" and d["model"] == "fix-mid" and d["mode"] == "readonly") else "BAD %s" % d)
+' "$naproj/fixture.meta.json" 2>/dev/null)"
+    assert_contains "new-agent: fixture.meta.json emitted with standard fields + agent=fixture" "$nam" "OK"
+  else
+    bad "new-agent: fixture.meta.json emitted with standard fields + agent=fixture" "no meta.json for the fixture agent"
+  fi
+  if [ -f "$naod/index.jsonl" ] && grep -q '"agent":"fixture"' "$naod/index.jsonl"; then
+    ok "new-agent: index.jsonl row emitted for the fixture agent"
+  else
+    bad "new-agent: index.jsonl row emitted for the fixture agent" "no fixture row in index.jsonl"
+  fi
+  na_live="$(cat "$naproj/fixture.argv" 2>/dev/null)"
+  if [ -n "$na_live" ] && [ "$na_live" = "$na_dry" ]; then
+    ok "new-agent: masked fixture.argv == --dry-run argv"
+  else
+    bad "new-agent: masked fixture.argv == --dry-run argv" "live=[$na_live] dry=[$na_dry]"
+  fi
+  case "$na_live" in *"<PROMPT>"*) ok "new-agent: fixture.argv masks the prompt";; *) bad "new-agent: fixture.argv masks the prompt" "no <PROMPT> placeholder";; esac
+  rm -rf "$nad" "$nastub" "$natgt" "$naod"
+else
+  skip "fixture-agent record/index/argv oracle (timeout/python3 unavailable)"
+fi
+
 echo "== agents.json schema validation (draft-07 contract) =="
 if python3 -c 'import jsonschema' 2>/dev/null; then
   # schema_check FILE -> "OK" if FILE validates against schema/agents.schema.json, else "REJECTED".
