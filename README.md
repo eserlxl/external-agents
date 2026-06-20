@@ -600,7 +600,7 @@ external-agents/
 ├── commands/external-agents.md     # /external-agents slash command (thin)
 ├── skills/external-agents/SKILL.md # the natural-language brain
 ├── scripts/run-agent.sh            # the deterministic driver (all the logic)
-├── scripts/bump-version.sh         # lockstep version bumper
+├── scripts/bump-version.sh         # lockstep version bumper (plugin.json · SKILL.md · README badge · CHANGELOG)
 ├── tests/run.sh                    # offline test suite (run-agent + bump-version)
 ├── tests/live-smoke.sh             # opt-in live smoke harness (EXTERNAL_AGENTS_LIVE)
 ├── tests/e2e/                      # opt-in end-to-end delegation recipes:

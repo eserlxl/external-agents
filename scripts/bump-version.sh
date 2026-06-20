@@ -2,8 +2,11 @@
 # SPDX-FileCopyrightText: 2026 Eser KUBALI
 # SPDX-License-Identifier: GPL-3.0-or-later
 #
-# Bump the external-agents plugin version in lockstep across the plugin
-# manifest, skill frontmatter, the README version badge, and CHANGELOG.md.
+# Bump the external-agents plugin version in lockstep across the four version
+# surfaces this repo ships: the plugin manifest (.claude-plugin/plugin.json),
+# each skill's frontmatter (skills/*/SKILL.md), the README version badge, and
+# the CHANGELOG.md entry. (This repo ships ONE manifest — there is no second
+# host manifest — so the bumper touches only .claude-plugin/plugin.json.)
 #
 # This script updates version numbers and the changelog — it does NOT create a
 # git tag or GitHub release. Tags should only be created at release milestones:

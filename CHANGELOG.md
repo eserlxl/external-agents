@@ -4,6 +4,15 @@ All notable changes to external-agents are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/),
 and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Removed
+- Dead `.codex-plugin/plugin.json` reference in `scripts/bump-version.sh`. The repository ships only
+  `.claude-plugin/plugin.json`, so the release tooling now describes exactly the manifests this repo
+  ships — lockstep across `.claude-plugin/plugin.json`, `skills/*/SKILL.md`, the README version
+  badge, and `CHANGELOG.md`. A regression guard in `tests/run.sh` keeps the dead reference from
+  returning.
+
 ## [0.6.0] - 2026-06-19
 
 ### Added
