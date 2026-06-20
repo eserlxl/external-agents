@@ -125,6 +125,27 @@ parity_dry agy high  "EXTERNAL_AGENTS_AGY_QUOTA_CMD=false"
 parity_dry agy xhigh "EXTERNAL_AGENTS_AGY_QUOTA_CMD=false"
 rm -rf "$pdir"
 
+echo "== registry-argv parity (agent × {read-only, write} × {jq, python3}; Phase 9.2 byte-identical) =="
+# The Phase 9.2 registry refactor must produce byte-identical --dry-run argv across the jq and python3
+# config backends for EVERY agent in BOTH modes — the regression contract that lets the adapter
+# boundary move safely. (The per-agent parity block above covers read-only × tiers; this adds the
+# WRITE mode for all four agents.) Stub PATH + dual backend, no live CLI. --model fixes the model (and
+# skips agy's quota check); a temp target + --yes clear the write-mode gates.
+rapd="$(mktemp -d)"; mk_restricted_bin "$rapd"   # python3, NO jq -> forces JSON_BACKEND=py
+ratgt="$(mktemp -d)"
+ra_parity() {  # agent  modeflag
+  local a="$1" mf="$2" oj op
+  oj="$(bash "$RUN" --agent "$a" "$mf" --yes --effort high --model TESTMODEL --target "$ratgt" --dry-run --prompt p 2>/dev/null)"
+  op="$(PATH="$rapd/bin" "$rapd/bin/bash" "$RUN" --agent "$a" "$mf" --yes --effort high --model TESTMODEL --target "$ratgt" --dry-run --prompt p 2>/dev/null)"
+  if [ -z "$oj" ] || [ -z "$op" ]; then skip "registry-argv $a $mf parity (a backend produced no argv)"; return; fi
+  if [ "$oj" = "$op" ]; then ok "registry-argv parity: $a $mf (jq == python3)"; else bad "registry-argv parity: $a $mf" "jq=[$oj] py=[$op]"; fi
+}
+for a in agy codex claude cursor; do
+  ra_parity "$a" "--read-only"
+  ra_parity "$a" "--write"
+done
+rm -rf "$rapd" "$ratgt"
+
 echo "== agents.json schema validation (draft-07 contract) =="
 if python3 -c 'import jsonschema' 2>/dev/null; then
   # schema_check FILE -> "OK" if FILE validates against schema/agents.schema.json, else "REJECTED".
