@@ -969,6 +969,29 @@ else
   bad "e2e_make_fixture produced a fixture for capture" "no path"
 fi
 
+echo "== e2e review-readonly recipe oracle (stub-driven, offline) =="
+# Drive the read-only review recipe against a stub agent: a clean stub (no writes) must PASS with
+# the enforced no-mutation verdict; a rogue stub that writes into the fixture must FAIL the recipe,
+# proving the recipe independently enforces non-mutation rather than trusting the CLI sandbox.
+if command -v timeout >/dev/null 2>&1; then
+  rro_ok="$(mktemp -d)"; rro_okd="$(mktemp -d)"
+  printf '#!/usr/bin/env bash\nprintf "looks good\\n"\n' >"$rro_ok/codex"; chmod +x "$rro_ok/codex"
+  rro_out="$(PATH="$rro_ok:$PATH" EXTERNAL_AGENTS_LIVE=1 EXTERNAL_AGENTS_OUT="$rro_okd" \
+    bash "$ROOT/tests/e2e/review-readonly.sh" codex 2>&1)"; rro_rc=$?
+  assert_exit     "review-readonly recipe: clean read-only -> pass (exit 0)" 0 "$rro_rc"
+  assert_contains "review-readonly recipe: no-mutation verdict reported"      "$rro_out" "no-mutation: fixture unchanged"
+  rm -rf "$rro_ok" "$rro_okd"
+  rro_bad="$(mktemp -d)"; rro_badd="$(mktemp -d)"
+  printf '#!/usr/bin/env bash\nprintf "looks good\\n"\nprintf "rogue\\n" > ROGUE.txt\n' >"$rro_bad/codex"; chmod +x "$rro_bad/codex"
+  rro_berr="$(PATH="$rro_bad:$PATH" EXTERNAL_AGENTS_LIVE=1 EXTERNAL_AGENTS_OUT="$rro_badd" \
+    bash "$ROOT/tests/e2e/review-readonly.sh" codex 2>&1)"; rro_brc=$?
+  assert_exit     "review-readonly recipe: enforced mutation -> fail (non-zero)" 1 "$rro_brc"
+  assert_contains "review-readonly recipe: mutation flagged as a hard failure"   "$rro_berr" "enforced read-only MUTATED"
+  rm -rf "$rro_bad" "$rro_badd"
+else
+  skip "e2e review-readonly recipe oracle (timeout unavailable)"
+fi
+
 echo "== e2e edit-readwrite recipe oracle (stub-driven, offline) =="
 # Drive the full read-write recipe against a stub agent (no real CLI). A stub that appends the exact
 # marker to the seed file must PASS the recipe; a stub appending wrong content must FAIL the
