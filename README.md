@@ -60,7 +60,8 @@ Requires `agy`, `codex`, the `cursor-agent` CLI (for the `cursor` agent; run
 `cursor-agent login` once), and — for the `claude` agent — `claude` on `PATH`, plus `jq`
 **or** `python3` to read `agents.json`. Optionally `antigravity-usage`
 (`npm i -g antigravity-usage`) enables agy's [quota-aware fallback](#agy-quota-aware-fallback-antigravity).
-Check with:
+Verify the install with the **`--check` preflight** — it reports the JSON reader (`jq`/`python3`) and
+whether each agent CLI is on `PATH`:
 
 ```bash
 bash scripts/run-agent.sh --check
