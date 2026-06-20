@@ -83,3 +83,32 @@ Every artifact in this flow — the index, the per-run records, and the archives
 `EXTERNAL_AGENTS_OUT` (default `$HOME/.external-agents/logs`), **outside the repository**, and carries
 **only control-plane facts**, never a transcript, prompt, or secret. The offline suite asserts the
 rotation / recoverability invariants and the secret-free guarantee.
+
+## Phase 8 resilience readiness
+
+What the run-history surface now guarantees, and the honest limits:
+
+**Enforced (offline-verified in `tests/run.sh`):**
+
+- **Outcome classification.** Every run records a closed-set `error_class` (`ok` / `safety-refusal` /
+  `timeout` / `transient` / `auth` / `contract` / `unknown`); a `safety-refusal` is never retryable.
+- **Bounded retry.** Retries are opt-in, bounded by `EXTERNAL_AGENTS_RETRY_MAX` (default `0`), and
+  apply only to retryable classes; `attempts` / `retried` are recorded.
+- **Schema contract.** The per-run record and index row conform to `schema/run-record.schema.json`
+  (validated under both jq and python3), and a drift guard keeps the emitter and schema in lockstep.
+- **Recoverability & retention.** Rotation archives the index atomically without losing rows, and
+  backup/restore reproduces content-identical rows — both drilled offline.
+
+**Best-effort (not a guarantee):**
+
+- **Cost/usage signals.** `signals.tokens` / `signals.cost` are CLI self-reports, not billing-grade;
+  an `unavailable` value is excluded from aggregates, never zeroed.
+- **agy read-only.** `--sandbox` is best-effort and never claimed as enforced — use
+  codex/claude/cursor for a hard read-only guarantee.
+
+**Boundaries:**
+
+- The **required CI gate is offline-only** ([.github/workflows/ci.yml](.github/workflows/ci.yml)) — it
+  launches no external CLI; live verification is opt-in (`EXTERNAL_AGENTS_LIVE=1`) and never required.
+- All run history (the index, per-run records, and archives) lives under `EXTERNAL_AGENTS_OUT`
+  (default `$HOME/.external-agents/logs`), **outside the repository**, and is control-plane only.
