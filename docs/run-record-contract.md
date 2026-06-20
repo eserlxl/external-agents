@@ -1,0 +1,71 @@
+# Run-record contract & stability
+
+`scripts/run-agent.sh` writes two record shapes, both **control-plane facts only** — never transcript
+text, never the prompt, never a secret (the content-free guarantee is part of the
+[threat model](threat-model.md)):
+
+- a **per-run `meta.json`** record (one per agent per run), written by `write_meta_json`, and
+- a **run-index `index.jsonl` row** — the same record augmented with `run_id` and `project`, appended
+  by `append_index_row`.
+
+Both shapes are published as a draft-07 schema in
+[`../schema/run-record.schema.json`](../schema/run-record.schema.json); this document is the
+field-by-field reference and the **stability policy**.
+
+## Fields
+
+Every value is the **post-fallback resolved truth** (what was actually used, not what was requested),
+built only from values resolved at launch/collect — never parsed from the transcript.
+
+| field | JSON type | semantic (post-fallback resolved) |
+|-------|-----------|-----------------------------------|
+| `agent` | string | the agent name |
+| `model` | string | the resolved model actually used (post-fallback for agy) |
+| `tier` | string | the effort tier (`low`/`medium`/`high`/`xhigh`) |
+| `effort` | string | the tier's native effort, or `(none)` |
+| `mode` | string | `readonly` or `write` |
+| `target` | string | the resolved directory the agent worked in |
+| `rc` | number \| string | agent process exit code (raw string only if non-numeric) |
+| `sec` | number \| string | wall-clock seconds |
+| `bytes` | number \| string | redacted transcript size in bytes |
+| `fallback` | boolean | `true` iff the agy quota fallback swapped the primary model |
+| `timestamp` | string | run launch time, UTC ISO-8601 (e.g. `2026-06-20T12:00:00Z`) |
+| `signals.tokens` | number \| string | a numeric token count, or the literal `unavailable` |
+| `signals.cost` | string | the cost string verbatim (e.g. `$0.12`), or the literal `unavailable` |
+
+Index-row-only fields (present in `index.jsonl`, not in `meta.json`):
+
+| field | JSON type | semantic |
+|-------|-----------|----------|
+| `run_id` | string | groups every agent of one fan-out under a single id |
+| `project` | string | the project namespace the run was recorded under |
+
+`signals.*` are **best-effort, CLI-self-reported** — not billing-grade. The literal `unavailable`
+means no signal was recognized and is **never** a fabricated number (see the README
+[signals](../README.md#cost-latency-and-quality-signals) caveat). For latency/size prefer the
+driver-measured `sec`/`bytes` over the agent-reported signals.
+
+## Stability policy (additive-only)
+
+The record is a versioned contract evolved **in lockstep** with the plugin version
+([`../scripts/bump-version.sh`](../scripts/bump-version.sh)):
+
+- **Additive (minor/patch bump).** Adding a **new** field. Consumers MUST ignore unknown fields; the
+  schema permits additional properties for exactly this reason, so an older consumer keeps working.
+- **Breaking (MAJOR bump required).** Any of:
+  - **rename** a field,
+  - **retype** a field (change its JSON type),
+  - **remove** a field, or
+  - **change a field's semantic** (what the value means, e.g. pre- vs post-fallback `model`).
+
+A breaking change must bump the **major** version and update both
+[`../schema/run-record.schema.json`](../schema/run-record.schema.json) and this document together. The
+offline suite's schema-conformance oracle and the schema↔driver drift guard fail if the emitter and the
+published schema diverge, so the contract cannot silently rot.
+
+## Content-free guarantee
+
+Both records carry **only** the control-plane facts above — never the prompt, never agent free-text,
+never a secret. This is enforced in the driver (records are built from values resolved at
+launch/collect, never parsed from the transcript) and asserted by the offline suite. The full
+trust-boundary analysis is in [threat-model.md](threat-model.md).

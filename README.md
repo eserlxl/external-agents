@@ -453,7 +453,9 @@ primary). Like the fan-out record, it is built **only** from values resolved at 
 
 The record's field set and JSON types are published as a draft-07 contract in
 [`schema/run-record.schema.json`](schema/run-record.schema.json), which validates both this
-`meta.json` record and the [run index](#run-index) row.
+`meta.json` record and the [run index](#run-index) row. The field-by-field reference and the
+**additive-only stability policy** (which changes require a major version bump) are in
+[`docs/run-record-contract.md`](docs/run-record-contract.md).
 
 **Where it lives.** The record is written to `<transcript-dir>/<agent>.meta.json` — the *same*
 per-project directory as that agent's transcript (default `~/.external-agents/logs/<project>`,

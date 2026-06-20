@@ -75,3 +75,13 @@ tokens, `KEY=`/`TOKEN=`/`SECRET=`/`PASSWORD=` assignments, and long high-entropy
 
 So transcripts must still be treated as sensitive. The matching user-facing note is the README
 [Safety → Transcript redaction](../README.md#safety) bullet.
+
+## Run records are content-free
+
+The per-run `meta.json` record and the `index.jsonl` row are **control-plane facts only** — the agent,
+resolved model/tier/effort/mode, target path, exit code, timing, size, fallback flag, timestamp, and
+best-effort cost/usage signals — built from values the driver resolved at launch/collect, **never**
+parsed from the transcript. They therefore carry no prompt, no agent free-text, and no secret. The
+field-by-field contract and stability policy are in
+[run-record-contract.md](run-record-contract.md); the offline suite asserts the records stay
+secret-free.
