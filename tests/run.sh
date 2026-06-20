@@ -726,6 +726,30 @@ else
   skip "agy best-effort report test (timeout unavailable)"
 fi
 
+echo "== live-smoke verdict helpers (offline unit tests of the pass/fail logic) =="
+# The pure helpers that decide a live run's verdict (enforced_readonly / mutation_outcome /
+# transcript_ok, sourced from tests/live-smoke.sh in the sandbox-fixture block above) are otherwise
+# only exercised during an opt-in live run. Pin their verdicts offline so a regression fails the gate.
+# enforced_readonly: codex/claude/cursor are HARD-enforced (0); agy is best-effort only (non-zero).
+for a in codex claude cursor; do
+  if enforced_readonly "$a"; then ok "enforced_readonly: $a is enforced"; else bad "enforced_readonly: $a is enforced" "returned non-zero"; fi
+done
+if enforced_readonly agy; then bad "enforced_readonly: agy is best-effort (not enforced)" "returned 0"; else ok "enforced_readonly: agy is best-effort (not enforced)"; fi
+# mutation_outcome: an enforced agent hard-fails on any change; agy reports but never fails.
+mutation_outcome codex ""        >/dev/null 2>&1; assert_exit "mutation_outcome: enforced + no change -> ok (0)" 0 "$?"
+mutation_outcome codex "M f.txt" >/dev/null 2>&1; assert_exit "mutation_outcome: enforced + change -> fail (1)"  1 "$?"
+mutation_outcome agy ""          >/dev/null 2>&1; assert_exit "mutation_outcome: agy + no change -> ok (0)"      0 "$?"
+mutation_outcome agy "M f.txt"   >/dev/null 2>&1; assert_exit "mutation_outcome: agy + change -> still ok (0)"   0 "$?"
+# transcript_ok: success only when rc==0 AND the transcript carries bytes.
+vproj="$(mktemp -d)"
+printf '0\n' >"$vproj/codex.rc"; printf 'some response\n' >"$vproj/codex.md"
+transcript_ok "$vproj" codex >/dev/null 2>&1; assert_exit "transcript_ok: rc=0 + bytes>0 -> ok (0)" 0 "$?"
+printf '1\n' >"$vproj/codex.rc"
+transcript_ok "$vproj" codex >/dev/null 2>&1; assert_exit "transcript_ok: rc!=0 -> fail (1)" 1 "$?"
+printf '0\n' >"$vproj/codex.rc"; : >"$vproj/codex.md"
+transcript_ok "$vproj" codex >/dev/null 2>&1; assert_exit "transcript_ok: empty transcript -> fail (1)" 1 "$?"
+rm -rf "$vproj"
+
 echo "== bump-version.sh lockstep write (mktemp fixture, real repo untouched) =="
 ft="$(mktemp -d)"
 mkdir -p "$ft/scripts" "$ft/.claude-plugin" "$ft/skills/external-agents"
