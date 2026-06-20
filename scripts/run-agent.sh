@@ -287,6 +287,14 @@ cfg() {
   esac
 }
 
+# --- adapter registry (Phase 9.2): the single declarative source of per-agent facts --------------
+# ADAPTER_BIN / ADAPTER_ENFORCEMENT own the per-agent POLICY data (CLI binary, read-only enforcement
+# class); the thin per-CLI argv builders (argv_<agent>, below) own ONLY the argv shape. The rest of the
+# driver derives its agent set, agent_bin, and the best-effort read-only NOTE from this registry, so
+# adding an agent does not touch policy code. Declared here (before every consumer) on purpose.
+declare -A ADAPTER_BIN=( [agy]="agy" [codex]="codex" [claude]="claude" [cursor]="cursor-agent" )
+declare -A ADAPTER_ENFORCEMENT=( [agy]="best-effort" [codex]="enforced" [claude]="enforced" [cursor]="enforced" )
+
 # The CLI binary an agent name maps to. Identical to the name for agy/codex/claude;
 # the cursor agent's binary is `cursor-agent` (NOT `cursor`, which is the IDE).
 agent_bin() { case "$1" in cursor) printf 'cursor-agent';; *) printf '%s' "$1";; esac; }
@@ -537,63 +545,71 @@ INDEX="$INDEX_BASE/index.jsonl"
 # agy --sandbox is best-effort, NOT a hard write barrier (see header) — warn so a
 # read-only run is never mistaken for an enforced guarantee.
 if [ "$MODE" = "readonly" ]; then
-  for a in "${RUN[@]}"; do [ "$a" = "agy" ] && { echo "run-agent: NOTE — agy read-only relies on --sandbox, which is best-effort and may still permit writes. For a hard guarantee use codex/claude/cursor, or target a throwaway copy." >&2; break; }; done
+  for a in "${RUN[@]}"; do [ "${ADAPTER_ENFORCEMENT[$a]:-}" = "best-effort" ] && { echo "run-agent: NOTE — agy read-only relies on --sandbox, which is best-effort and may still permit writes. For a hard guarantee use codex/claude/cursor, or target a throwaway copy." >&2; break; }; done
 fi
 # A write run with no git baseline has no diff/revert recovery path — warn.
 if [ "$MODE" = "write" ] && [ "$DRYRUN" = "0" ] && [ -z "$TOP" ]; then
   echo "run-agent: NOTE — --target is not a git repo; no baseline to diff or revert after writes. Consider 'git init' or a backup first." >&2
 fi
 
+# Per-CLI argv builders (Phase 9.2) — each sets ARGV[] and PROMPT_IDX for ONE agent, byte-identical to the pre-9.2
+# inline case. They consume the resolved model/effort ($1/$2) plus the globals MODE/PROMPT/TARGET/
+# CLAUDE_PERM; the agy quota fallback has already resolved $1 by the time argv_agy runs.
+argv_agy() {
+  local m="$1"
+  ARGV=(agy -p "$PROMPT" --add-dir "$TARGET"); PROMPT_IDX=2
+  [ "$MODE" = "readonly" ] && ARGV+=(--sandbox) || ARGV+=(--dangerously-skip-permissions)
+  [ -n "$m" ] && ARGV+=(--model "$m")
+}
+argv_codex() {
+  local m="$1" e="$2"
+  if [ "$MODE" = "readonly" ]; then ARGV=(codex exec -s read-only -C "$TARGET" --skip-git-repo-check)
+  else ARGV=(codex exec -s workspace-write -C "$TARGET" --skip-git-repo-check); fi
+  [ -n "$m" ] && ARGV+=(-m "$m")
+  [ -n "$e" ] && ARGV+=(-c "model_reasoning_effort=\"$e\"")
+  ARGV+=("$PROMPT"); PROMPT_IDX=$(( ${#ARGV[@]} - 1 ))
+}
+argv_claude() {
+  local m="$1" e="$2"
+  if [ "$MODE" = "readonly" ]; then ARGV=(claude -p "$PROMPT" --allowedTools Read Grep Glob)
+  else ARGV=(claude -p "$PROMPT" --permission-mode "$CLAUDE_PERM"); fi
+  PROMPT_IDX=2
+  [ -n "$m" ] && ARGV+=(--model "$m")
+  [ -n "$e" ] && ARGV+=(--effort "$e")
+}
+argv_cursor() {
+  # cursor-agent: -p headless print mode; the prompt is the trailing positional after `--`, which ends
+  # option parsing so a prompt starting with '-' can't be read as a flag. --trust avoids the
+  # non-interactive workspace-trust prompt; readonly -> --mode plan (enforced), write -> --force.
+  local m="$1"
+  if [ "$MODE" = "readonly" ]; then ARGV=(cursor-agent -p --mode plan --trust --workspace "$TARGET")
+  else ARGV=(cursor-agent -p --force --trust --workspace "$TARGET"); fi
+  [ -n "$m" ] && ARGV+=(--model "$m")
+  ARGV+=(-- "$PROMPT"); PROMPT_IDX=$(( ${#ARGV[@]} - 1 ))
+}
+
 # --- build one agent's argv  (model/effort resolved from the tier) ----------------
-build_argv() {  # agent ; sets global ARGV[], RESOLVED_MODEL, FALLBACK_TAKEN
+build_argv() {  # agent ; sets global ARGV[], RESOLVED_MODEL, FALLBACK_TAKEN, PROMPT_IDX
   local a="$1" m e fb st
+  [ -n "${ADAPTER_BIN[$a]:-}" ] || { echo "run-agent: unknown agent '$a'" >&2; return 1; }
   m="${MODEL:-$(cfg model "$a" "$TIER")}"
   e="$(cfg effort "$a" "$TIER")"
   FALLBACK_TAKEN=0          # set to 1 below iff the agy quota fallback swaps the primary model
+  # Quota-aware model pick (control-plane policy; only agy tiers carry a 'fallback'): use the limited
+  # 3rd-party primary ONLY when its quota is positively confirmed available; on exhausted OR unknown
+  # (IDE closed / antigravity-usage unavailable) drop to the larger-limit Gemini fallback, so scarce
+  # 3rd-party / Opus quota is never spent unconfirmed. A --model override is explicit intent and skips it.
+  fb="$(cfg fallback "$a" "$TIER")"
+  if [ -z "$MODEL" ] && [ -n "$m" ] && [ -n "$fb" ]; then
+    st="$(agy_model_status "$m")"
+    case "$st" in
+      available) ;;
+      unknown) echo "run-agent: NOTE — agy quota for '$m' is unknown (open the Antigravity IDE or run 'antigravity-usage login' to enable it); using fallback '$fb'." >&2; m="$fb"; FALLBACK_TAKEN=1;;
+      *)       echo "run-agent: NOTE — agy '$m' is $st per antigravity-usage; using fallback '$fb'." >&2; m="$fb"; FALLBACK_TAKEN=1;;
+    esac
+  fi
   ARGV=()
-  case "$a" in
-    agy)
-      ARGV=(agy -p "$PROMPT" --add-dir "$TARGET"); PROMPT_IDX=2
-      [ "$MODE" = "readonly" ] && ARGV+=(--sandbox) || ARGV+=(--dangerously-skip-permissions)
-      # Quota-aware model pick: a tier with a 'fallback' names a (limited) 3rd-party
-      # primary + a larger-limit Gemini backup. Consult antigravity-usage and use the
-      # primary ONLY when its quota is positively confirmed available; on exhausted OR
-      # unknown (IDE closed / antigravity-usage unavailable) drop to the fallback, so
-      # scarce 3rd-party / Opus quota is never spent unconfirmed. A --model override
-      # is explicit intent and skips the check.
-      fb="$(cfg fallback "$a" "$TIER")"
-      if [ -z "$MODEL" ] && [ -n "$m" ] && [ -n "$fb" ]; then
-        st="$(agy_model_status "$m")"
-        case "$st" in
-          available) ;;
-          unknown) echo "run-agent: NOTE — agy quota for '$m' is unknown (open the Antigravity IDE or run 'antigravity-usage login' to enable it); using fallback '$fb'." >&2; m="$fb"; FALLBACK_TAKEN=1;;
-          *)       echo "run-agent: NOTE — agy '$m' is $st per antigravity-usage; using fallback '$fb'." >&2; m="$fb"; FALLBACK_TAKEN=1;;
-        esac
-      fi
-      [ -n "$m" ] && ARGV+=(--model "$m");;
-    codex)
-      if [ "$MODE" = "readonly" ]; then ARGV=(codex exec -s read-only -C "$TARGET" --skip-git-repo-check)
-      else ARGV=(codex exec -s workspace-write -C "$TARGET" --skip-git-repo-check); fi
-      [ -n "$m" ] && ARGV+=(-m "$m")
-      [ -n "$e" ] && ARGV+=(-c "model_reasoning_effort=\"$e\"")
-      ARGV+=("$PROMPT"); PROMPT_IDX=$(( ${#ARGV[@]} - 1 ));;
-    claude)
-      if [ "$MODE" = "readonly" ]; then ARGV=(claude -p "$PROMPT" --allowedTools Read Grep Glob)
-      else ARGV=(claude -p "$PROMPT" --permission-mode "$CLAUDE_PERM"); fi
-      PROMPT_IDX=2
-      [ -n "$m" ] && ARGV+=(--model "$m")
-      [ -n "$e" ] && ARGV+=(--effort "$e");;
-    cursor)
-      # cursor-agent: -p headless print mode; the prompt is the trailing positional.
-      # readonly -> --mode plan (enforced no-edit); write -> --force (auto-approve all
-      # tools). --trust avoids the non-interactive workspace-trust prompt. The closing
-      # `--` ends option parsing so a prompt starting with '-' can't be read as a flag.
-      if [ "$MODE" = "readonly" ]; then ARGV=(cursor-agent -p --mode plan --trust --workspace "$TARGET")
-      else ARGV=(cursor-agent -p --force --trust --workspace "$TARGET"); fi
-      [ -n "$m" ] && ARGV+=(--model "$m")
-      ARGV+=(-- "$PROMPT"); PROMPT_IDX=$(( ${#ARGV[@]} - 1 ));;
-    *) echo "run-agent: unknown agent '$a'" >&2; return 1;;
-  esac
+  "argv_$a" "$m" "$e"       # dispatch to the thin per-CLI argv builder (byte-identical to pre-9.2)
   RESOLVED_MODEL="$m"       # the model actually used (post-fallback for agy); may be empty (cli default)
   return 0
 }
