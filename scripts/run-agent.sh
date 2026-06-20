@@ -630,7 +630,7 @@ format_masked_argv() {
   printf '%s' "${line# }"
 }
 
-# write_meta_json FILE agent model tier effort mode target rc sec bytes fallback timestamp tokens cost
+# write_meta_json FILE agent model tier effort mode target rc sec bytes fallback timestamp tokens cost error_class
 # Emit the Phase 5.1 per-run metadata record as ONE JSON object (safe escaping via the same
 # jq/python3 backend the config reads through). It carries ONLY control-plane facts the driver
 # resolved at launch/collect — never transcript text — so it never leaks an agent's free-text or
@@ -655,7 +655,7 @@ def sig(x):
 print(json.dumps({
     "agent": a[0], "model": a[1], "tier": a[2], "effort": a[3], "mode": a[4],
     "target": a[5], "rc": num(a[6]), "sec": num(a[7]), "bytes": num(a[8]),
-    "fallback": a[9] == "1", "timestamp": a[10],
+    "fallback": a[9] == "1", "timestamp": a[10], "error_class": a[13],
     "signals": {"tokens": sig(a[11]), "cost": a[12]},
 }, separators=(",", ":")))
 PY
@@ -664,10 +664,10 @@ PY
       jq -nc \
         --arg agent "$1" --arg model "$2" --arg tier "$3" --arg effort "$4" --arg mode "$5" \
         --arg target "$6" --arg rc "$7" --arg sec "$8" --arg bytes "$9" --arg fb "${10}" --arg ts "${11}" \
-        --arg tok "${12}" --arg cost "${13}" \
+        --arg tok "${12}" --arg cost "${13}" --arg ec "${14}" \
         '{agent:$agent, model:$model, tier:$tier, effort:$effort, mode:$mode, target:$target,
           rc:($rc|tonumber? // $rc), sec:($sec|tonumber? // $sec), bytes:($bytes|tonumber? // $bytes),
-          fallback:($fb=="1"), timestamp:$ts,
+          fallback:($fb=="1"), timestamp:$ts, error_class:$ec,
           signals:{tokens:($tok|if test("^[0-9]+$") then tonumber else . end), cost:$cost}}' >"$file"
       ;;
   esac
@@ -740,8 +740,35 @@ PY
 #   unknown         an unclassified non-zero exit                                   NO (conservative)
 #
 # Retryable subset = { transient (always), timeout (opt-in) }. safety-refusal is NEVER retryable.
+#
+# classify_outcome GATE RC ERRFILE -> exactly one class from the closed set above.
+#   GATE non-empty -> a pre-launch safety gate refused (classified before launch) -> safety-refusal.
+#   else the class is derived from rc + a conservative, anchored stderr signal. Computed ONCE in shell
+#   and handed to the emitter so the jq and python3 backends cannot diverge.
+classify_outcome() {
+  local gate="$1" rc="$2" errf="${3:-}" err="" errl=""
+  [ -n "$gate" ] && { printf 'safety-refusal'; return 0; }
+  [ "$rc" = "0" ] && { printf 'ok'; return 0; }
+  [ "$rc" = "124" ] && { printf 'timeout'; return 0; }   # timeout(1) exits 124 when it kills the child
+  [ -f "$errf" ] && err="$(cat "$errf" 2>/dev/null)"
+  errl="$(printf '%s' "$err" | tr '[:upper:]' '[:lower:]')"
+  case "$errl" in
+    *unauthorized*|*"authentication failed"*|*"not logged in"*|*"invalid api key"*|*"please log in"*)
+      printf 'auth'; return 0;;
+  esac
+  case "$errl" in
+    *"rate limit"*|*"rate-limit"*|*"429"*|*"503"*|*"502"*|*"504"*|*"service unavailable"*|*"temporarily unavailable"*|*"connection reset"*|*econnreset*|*"timed out"*|*"try again"*|*"network error"*)
+      printf 'transient'; return 0;;
+  esac
+  case "$errl" in
+    *malformed*|*"unexpected response"*|*"protocol error"*|*"parse error"*|*"invalid response"*|*"empty response"*)
+      printf 'contract'; return 0;;
+  esac
+  printf 'unknown'
+}
+
 run_one() {  # agent  (cwd=TARGET) — stdout->$OUT/<a>.md (redacted), stderr->.err, rc/.sec, .meta.json
-  local a="$1" t0 t1 rc ts bytes reff tok cost
+  local a="$1" t0 t1 rc ts bytes reff tok cost ec
   build_argv "$a" || return 1
   # Record the resolved launch argv with the prompt masked — identical to --dry-run — so a
   # live run's exact argv can be verified without ever persisting the prompt text.
@@ -767,8 +794,11 @@ run_one() {  # agent  (cwd=TARGET) — stdout->$OUT/<a>.md (redacted), stderr->.
   # Phase 5.3 — best-effort cost/latency signals from the (redacted) transcript; absent -> "unavailable".
   tok="$(extract_signal "$OUT/$a.md" "$a" tokens)";  [ -n "$tok" ]  || tok="unavailable"
   cost="$(extract_signal "$OUT/$a.md" "$a" cost)";   [ -n "$cost" ] || cost="unavailable"
+  # Classify the outcome ONCE (closed taxonomy above; no gate refusal here — the run launched) and
+  # record it as the additive error_class field. append_index_row inherits it via the record spread.
+  ec="$(classify_outcome "" "$rc" "$OUT/$a.err")"
   write_meta_json "$OUT/$a.meta.json" "$a" "${RESOLVED_MODEL:-(cli default)}" "${TIER:-(none)}" \
-    "${reff:-(none)}" "$MODE" "$TARGET" "$rc" "$((t1 - t0))" "$bytes" "$FALLBACK_TAKEN" "$ts" "$tok" "$cost"
+    "${reff:-(none)}" "$MODE" "$TARGET" "$rc" "$((t1 - t0))" "$bytes" "$FALLBACK_TAKEN" "$ts" "$tok" "$cost" "$ec"
 }
 
 # --- dry-run: print resolved argv and exit ----------------------------------------

@@ -47,6 +47,11 @@
         "bytes":     { "type": ["integer", "string"], "description": "Redacted transcript size in bytes (number; raw string only if non-numeric)." },
         "fallback":  { "type": "boolean", "description": "true iff the agy quota fallback swapped the primary model." },
         "timestamp": { "type": "string", "description": "Run launch time, UTC ISO-8601 (e.g. 2026-06-20T12:00:00Z)." },
+        "error_class": {
+          "type": "string",
+          "description": "Phase 8.2 closed-set outcome class. Additive/optional (absent on records emitted before it existed).",
+          "enum": ["ok", "safety-refusal", "timeout", "transient", "auth", "contract", "unknown"]
+        },
         "signals":   { "$ref": "#/definitions/signals" }
       }
     },
