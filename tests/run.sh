@@ -446,12 +446,14 @@ if command -v jq >/dev/null 2>&1 && command -v timeout >/dev/null 2>&1 && comman
   cjstub="$(mktemp -d)"
   for cjb in agy codex cursor-agent; do printf '#!/usr/bin/env bash\necho resp\n' >"$cjstub/$cjb"; chmod +x "$cjstub/$cjb"; done
   cjrb="$(mktemp -d)"; mk_restricted_bin "$cjrb"   # python3, NO jq -> py config backend (--json emitter still python3)
-  cj_doc() {  # bashbin pathprefix consensus(0|1) -> the --json doc (last line)
+  cj_doc() {  # bashbin pathprefix consensus(0|1) -> the --json doc (last line); wall-clock "sec" masked
     local bb="$1" pp="$2" cflag="$3" tg od extra=()
     [ "$cflag" = "1" ] && extra=(--consensus)
     tg="$(mktemp -d)"; od="$(mktemp -d)"
+    # Mask the timing-dependent "sec" to a valid-JSON 0 (the two runs can straddle a 1s boundary) so the
+    # cross-backend byte comparison + the agents[] parse are deterministic.
     EXTERNAL_AGENTS_AGY_QUOTA_CMD=false PATH="$cjstub:$pp" EXTERNAL_AGENTS_OUT="$od" \
-      "$bb" "$RUN" --agent all --effort high --read-only --json ${extra[@]+"${extra[@]}"} --target "$tg" --prompt x 2>/dev/null | tail -1
+      "$bb" "$RUN" --agent all --effort high --read-only --json ${extra[@]+"${extra[@]}"} --target "$tg" --prompt x 2>/dev/null | tail -1 | sed -E 's#"sec": *[0-9]+#"sec":0#g'
     rm -rf "$tg" "$od"
   }
   cj_a="$(cj_doc "bash" "$PATH" 1)"
@@ -971,10 +973,12 @@ if command -v jq >/dev/null 2>&1 && command -v timeout >/dev/null 2>&1 && comman
   estub="$(mktemp -d)"
   for b in agy codex cursor-agent; do printf '#!/usr/bin/env bash\necho "resp text"\n' >"$estub/$b"; chmod +x "$estub/$b"; done
   erb="$(mktemp -d)"; mk_restricted_bin "$erb"   # python3, NO jq -> forces JSON_BACKEND=py
-  # Mask the run-unique fields (target path, timestamp, run_id, project) so only the structural
+  # Mask the run-unique fields (target path, timestamp, run_id, project) AND the wall-clock "sec"
+  # (timing-dependent: the two backend runs can straddle a 1-second boundary) so only the structural
   # JSON shape + resolved values are compared across the two backends.
   emask() { sed -E -e 's#"target":"[^"]*"#"target":"T"#g' -e 's#"timestamp":"[^"]*"#"timestamp":"TS"#g' \
-                   -e 's#"run_id":"[^"]*"#"run_id":"RID"#g' -e 's#"project":"[^"]*"#"project":"P"#g'; }
+                   -e 's#"run_id":"[^"]*"#"run_id":"RID"#g' -e 's#"project":"[^"]*"#"project":"P"#g' \
+                   -e 's#"sec": *[0-9]+#"sec":0#g'; }
   emit_run() {  # tag  pathprefix  bashbin
     local tag="$1" pp="$2" bb="$3" etgt eod eproj
     etgt="$(mktemp -d)"; eod="$(mktemp -d)"
@@ -983,7 +987,7 @@ if command -v jq >/dev/null 2>&1 && command -v timeout >/dev/null 2>&1 && comman
     eproj="$eod/$(basename "$etgt")"
     emask <"$eproj/codex.meta.json" >"$estub/$tag.meta" 2>/dev/null
     grep '"agent":"codex"' "$eod/index.jsonl" 2>/dev/null | emask >"$estub/$tag.row"
-    tail -1 "$eod/stdout" >"$estub/$tag.json" 2>/dev/null
+    tail -1 "$eod/stdout" | emask >"$estub/$tag.json" 2>/dev/null
     rm -rf "$etgt" "$eod"
   }
   emit_run jq "$PATH"      "bash"
