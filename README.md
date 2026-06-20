@@ -90,6 +90,13 @@ CLI can be present yet unauthenticated or misconfigured, so a passing `--check` 
 sufficient for a working run. Proving an agent actually round-trips (and that the enforced read-only
 guarantee holds) is the job of the opt-in [live smoke harness](#live-smoke-opt-in), never `--check`.
 
+There is intentionally **no built-in auth/health probe** on `--check`: a meaningful check (is this
+CLI signed in and able to respond?) needs an authenticated, networked call that is neither free nor
+side-effect-free, and wiring it into `--check` would couple the offline gate to live CLIs — so it is
+deliberately deferred. **Authentication is your responsibility:** sign each agent in once (e.g.
+`cursor-agent login`, plus the sign-in `codex` / `agy` / `claude` each need), then confirm a real
+round-trip with the opt-in [live smoke harness](#live-smoke-opt-in).
+
 ## Usage
 
 Natural language (skill):
