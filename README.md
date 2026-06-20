@@ -611,5 +611,13 @@ external-agents/
 │   ├── edit-non-git.sh             #   read-write on a non-git dir (no-baseline warning)
 │   └── lib/                        #   fixture.sh + capture.sh (deterministic fixture + evidence)
 ├── docs/e2e-recipe.md              # the shared E2E recipe contract + per-recipe steps
+├── RELEASING.md                    # release runbook (bump → tag → push)
 └── .github/workflows/ci.yml        # CI: shellcheck + tests on push/PR
 ```
+
+## Releasing
+
+Cutting a release is a documented, repeatable procedure: run the lockstep
+[`scripts/bump-version.sh`](scripts/bump-version.sh), then create and push the matching annotated
+tag (the step the bumper deliberately leaves out). The full flow — clean tree, dry-run preview, real
+bump, diff review, commit, `vX.Y.Z` tag, push — is in [RELEASING.md](RELEASING.md).
