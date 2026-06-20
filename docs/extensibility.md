@@ -43,3 +43,36 @@ Two edits, no policy code:
 No edit to `agent_bin`, the allow-list, the `--check`/`--discover` candidate lists, or the safety
 gates — they all derive from the registry. The threat-model matrix row (and its enforcement class)
 should be added too, so the enforcement-class doc-drift guard stays green.
+
+## Add-an-agent walkthrough
+
+Adding an agent is exactly **two edits** — a registry entry and an `agents.json` block — plus the
+standard validation loop. **No policy code is touched**; the fixture-agent oracle and the
+policy-decoupling guard in `tests/run.sh` prove a registry-only agent resolves its tier, builds correct
+argv, is discovered, and emits the standard records.
+
+**Edit 1 — the registry entry** (`scripts/run-agent.sh`, the adapter-registry block):
+
+1. Add the name to `ADAPTER_AGENTS` (the ordered agent set).
+2. Add its CLI binary to `ADAPTER_BIN` (`[name]="binary"`).
+3. Add its read-only enforcement class to `ADAPTER_ENFORCEMENT` (`enforced` or `best-effort`).
+4. Add a thin `argv_<name>()` builder that sets `ARGV[]` and `PROMPT_IDX` for the read-only and write
+   argv shapes (mirror an existing builder, e.g. `argv_cursor`).
+5. Add the agent's row to the [threat-model read-only matrix](threat-model.md#per-cli-read-only-enforcement-matrix)
+   so the enforcement-class doc-drift guard stays green.
+
+**Edit 2 — the `agents.json` block**: add the agent's `tiers` map (model, optional native effort,
+optional agy-only fallback) under `agents`, with `"enabled": true`. `schema/agents.schema.json` already
+accepts new agents via `additionalProperties`.
+
+**Then run the validation loop** (the same one CI runs — see
+[CONTRIBUTING.md](../CONTRIBUTING.md#the-validation-loop)):
+
+```bash
+shellcheck scripts/run-agent.sh scripts/bump-version.sh
+python3 -c "import json, jsonschema; jsonschema.validate(json.load(open('agents.json')), json.load(open('schema/agents.schema.json')))"
+bash tests/run.sh
+```
+
+That's it — no policy edit. `--dry-run --agent <name>` now prints the agent's argv, and
+`--check` / `--discover` report it present once its binary is on `PATH`.

@@ -47,8 +47,9 @@ Three layers, one rule:
 prompt construction are all enforced in `run-agent.sh`, so they hold no matter how the script is
 invoked — never relocate a gate up into the skill or command.
 
-To **add an agent**, see [docs/extensibility.md](docs/extensibility.md) — it inventories every driver
-touch-point an added agent requires (and the config-side `agents.json` entry).
+To **add an agent**, see [docs/extensibility.md](docs/extensibility.md) — since Phase 9.2 it is exactly
+**two edits** (a registry entry in `scripts/run-agent.sh` plus an `agents.json` block), **no policy
+code**, with a step-by-step walkthrough and validation steps.
 
 ## Packaging contract (install-critical manifest fields)
 
