@@ -313,6 +313,38 @@ on-disk location are intentionally deferred to a later phase** (the per-run meta
 index) — `--json` today is a streaming summary you can pipe (`… --json | jq …`), not a stored
 artifact.
 
+## Run metadata and history
+
+### Per-run metadata record
+
+Beyond the in-memory [fan-out record](#fan-out-observability), **every run — single agent *or*
+`--agent all` fan-out — writes one structured JSON metadata record per agent** next to that agent's
+transcript, capturing the run's **control-plane truth** so you never have to re-parse a transcript to
+know how a run resolved. Each field is a **post-fallback resolved** value (what was *actually* used,
+not what was requested):
+
+| field | meaning (post-fallback resolved truth) | source |
+|-------|----------------------------------------|--------|
+| `agent` | the agent name | the run request |
+| `model` | the **resolved** model actually used (post-fallback for agy) | `run_one`'s `.model` sidecar |
+| `tier` | the effort tier (`--effort`, else `default_tier`) | the run request / config |
+| `effort` | the tier's native effort (codex/claude; `(none)` if unset) | `agents.json` |
+| `mode` | `readonly` / `write` | the run mode |
+| `target` | the resolved directory the agent worked in | resolved `--target` |
+| `rc` | the agent process exit code | the run |
+| `sec` | wall-clock seconds | the run |
+| `bytes` | redacted transcript size | the run |
+| `fallback` | `true` iff the agy quota fallback swapped the primary model | `run_one`'s `.fallback` sidecar |
+| `timestamp` | run launch time, UTC ISO-8601 (e.g. `2026-06-20T12:00:00Z`) | the run |
+
+`model`, `fallback`, `tier`, `effort`, and `mode` are exactly the resolved facts the fan-out record
+carries; the per-run record additionally pins the **`target`** the agent worked in and the
+**`timestamp`** it launched, and — unlike the fan-out summary, which is fan-out only — is written
+durably to disk for *every* run. The post-fallback rule is decisive: for an agy quota fallback,
+`model` is the **Gemini fallback actually used** and `fallback` is `true` (never the unconfirmed
+primary). Like the fan-out record, it is built **only** from values resolved at launch/collect time —
+**never parsed from the transcript** — so it carries no agent free-text and no prompt.
+
 ## Safety
 
 For the full trust-boundary analysis and the per-CLI enforcement matrix, see
