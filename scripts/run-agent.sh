@@ -292,12 +292,14 @@ cfg() {
 # class); the thin per-CLI argv builders (argv_<agent>, below) own ONLY the argv shape. The rest of the
 # driver derives its agent set, agent_bin, and the best-effort read-only NOTE from this registry, so
 # adding an agent does not touch policy code. Declared here (before every consumer) on purpose.
+ADAPTER_AGENTS=(agy codex claude cursor)   # the known agent set, in canonical (deterministic) order
 declare -A ADAPTER_BIN=( [agy]="agy" [codex]="codex" [claude]="claude" [cursor]="cursor-agent" )
 declare -A ADAPTER_ENFORCEMENT=( [agy]="best-effort" [codex]="enforced" [claude]="enforced" [cursor]="enforced" )
 
-# The CLI binary an agent name maps to. Identical to the name for agy/codex/claude;
-# the cursor agent's binary is `cursor-agent` (NOT `cursor`, which is the IDE).
-agent_bin() { case "$1" in cursor) printf 'cursor-agent';; *) printf '%s' "$1";; esac; }
+# The CLI binary an agent name maps to — derived from the registry (ADAPTER_BIN). Identical to the
+# name for agy/codex/claude; the cursor agent's binary is `cursor-agent` (NOT `cursor`, the IDE). An
+# unknown name maps to itself (the pre-registry behaviour).
+agent_bin() { printf '%s' "${ADAPTER_BIN[$1]:-$1}"; }
 
 # --- agy quota-aware fallback -----------------------------------------------------
 # agy is Google's Antigravity. Bare `agy` has no scriptable quota, but the free CLI
@@ -374,10 +376,8 @@ if [ "$CHECK" = "1" ]; then
   else
     printf '  MISS %-7s need jq or python3 on PATH to read %s\n' "json" "$(basename "$CONF")"; missing=$((missing + 1))
   fi
-  case "$AGENT" in
-    agy|codex|claude|cursor) cand=("$AGENT");;
-    *)                       cand=(agy codex claude cursor);;   # 'all' or unset -> check every known cli
-  esac
+  # A scoped --agent <name> probes just that agent; 'all'/unset probes the whole registry set.
+  if [ -n "${ADAPTER_BIN[$AGENT]:-}" ]; then cand=("$AGENT"); else cand=("${ADAPTER_AGENTS[@]}"); fi
   seen=""
   for a in "${cand[@]}"; do
     case ",$seen," in *",$a,"*) continue;; esac; seen="$seen,$a"
@@ -413,10 +413,8 @@ fi
 # Presence (command -v via agent_bin) is the cheap, offline signal; live auth is left
 # to the harness. Config-independent, like --check, so it never needs agents.json.
 if [ "$DISCOVER" = "1" ]; then
-  case "$AGENT" in
-    agy|codex|claude|cursor) dcand=("$AGENT");;
-    *)                       dcand=(agy codex claude cursor);;   # 'all' or unset -> every known cli
-  esac
+  # A scoped --agent <name> lists just that agent; 'all'/unset lists the whole registry set.
+  if [ -n "${ADAPTER_BIN[$AGENT]:-}" ]; then dcand=("$AGENT"); else dcand=("${ADAPTER_AGENTS[@]}"); fi
   dseen=""
   for a in "${dcand[@]}"; do
     case ",$dseen," in *",$a,"*) continue;; esac; dseen="$dseen,$a"
@@ -461,7 +459,12 @@ if [ "$AGENT" = "all" ]; then
   while IFS= read -r a; do [ -n "$a" ] && RUN+=("$a"); done < <(cfg enabled)
   [ "${#RUN[@]}" -gt 0 ] || { echo "run-agent: --agent all but no agents enabled in $CONF" >&2; exit 2; }
 elif [ -n "$AGENT" ]; then
-  case "$AGENT" in agy|codex|claude|cursor) RUN=("$AGENT");; *) echo "run-agent: unknown agent '$AGENT' (want agy|codex|claude|cursor|all)" >&2; exit 2;; esac
+  if [ -n "${ADAPTER_BIN[$AGENT]:-}" ]; then
+    RUN=("$AGENT")
+  else
+    agent_hint="$(IFS='|'; printf '%s' "${ADAPTER_AGENTS[*]}")"   # registry-derived: agy|codex|claude|cursor
+    echo "run-agent: unknown agent '$AGENT' (want $agent_hint|all)" >&2; exit 2
+  fi
 fi
 
 # --- validate the run request -----------------------------------------------------
