@@ -967,6 +967,18 @@ echo "== plugin packaging oracle (required files + manifest fields + version loc
 # distribution-manifest oracle and the field-contract negative-path assertion below so they cannot drift.
 MANIFEST="$ROOT/.claude-plugin/plugin.json"
 MANIFEST_REQUIRED_FIELDS=(name version description homepage repository license)
+# manifest_field_gap MANIFEST_PATH — the SINGLE shared required-field check used by the packaging,
+# negative-path, and distribution oracles below. Prints a space-prefixed list of
+# MANIFEST_REQUIRED_FIELDS that are absent/empty in MANIFEST_PATH (empty output == all present), so
+# removing a required field is caught identically wherever it is used (no per-oracle drift).
+manifest_field_gap() {
+  local mp="$1" k gap="" val
+  for k in "${MANIFEST_REQUIRED_FIELDS[@]}"; do
+    val="$(python3 -c 'import json,sys; d=json.load(open(sys.argv[1])); v=d.get(sys.argv[2]); print("ok" if v not in (None,"") else "")' "$mp" "$k" 2>/dev/null)"
+    [ "$val" = "ok" ] || gap="$gap $k"
+  done
+  printf '%s' "$gap"
+}
 pkg_required_files=(
   ".claude-plugin/plugin.json"
   "commands/external-agents.md"
@@ -998,12 +1010,8 @@ if command -v jq >/dev/null 2>&1; then
 else
   skip "packaging: jq parse parity (jq unavailable)"
 fi
-# Every required field present and non-empty.
-pkg_field_gap=""
-for k in "${MANIFEST_REQUIRED_FIELDS[@]}"; do
-  v="$(python3 -c 'import json,sys; d=json.load(open(sys.argv[1])); val=d.get(sys.argv[2]); print("ok" if val not in (None,"") else "")' "$MANIFEST" "$k" 2>/dev/null)"
-  [ "$v" = "ok" ] || pkg_field_gap="$pkg_field_gap $k"
-done
+# Every required field present and non-empty — via the shared manifest_field_gap helper.
+pkg_field_gap="$(manifest_field_gap "$MANIFEST")"
 if [ -z "$pkg_field_gap" ]; then
   ok "packaging: all required manifest fields present and non-empty (${MANIFEST_REQUIRED_FIELDS[*]})"
 else
@@ -1024,11 +1032,7 @@ echo "== manifest field-contract (negative path + CONTRIBUTING.md set parity) ==
 # so the doc and the test cannot drift apart.
 mf_tmp="$(mktemp)"
 python3 -c 'import json,sys; d=json.load(open(sys.argv[1])); d.pop("homepage",None); json.dump(d,open(sys.argv[2],"w"))' "$MANIFEST" "$mf_tmp" 2>/dev/null
-mf_gap=""
-for k in "${MANIFEST_REQUIRED_FIELDS[@]}"; do
-  v="$(python3 -c 'import json,sys; d=json.load(open(sys.argv[1])); val=d.get(sys.argv[2]); print("ok" if val not in (None,"") else "")' "$mf_tmp" "$k" 2>/dev/null)"
-  [ "$v" = "ok" ] || mf_gap="$mf_gap $k"
-done
+mf_gap="$(manifest_field_gap "$mf_tmp")"
 rm -f "$mf_tmp"
 case " $mf_gap " in
   *" homepage "*) ok "manifest field-contract: removing a required field is caught (homepage flagged)";;
@@ -1051,6 +1055,14 @@ echo "== distribution-manifest oracle (listing fields well-formed + license/vers
 # the version must equal the lockstep version. A MISSING listing field is empty -> fails its shape
 # check, so this oracle also catches an omitted field. Reuses MANIFEST (the packaging oracle's shared
 # source). Offline, no CLI.
+# Presence half: shared with the packaging oracle via the manifest_field_gap helper, so the two
+# oracles cannot diverge on which fields are required.
+dist_gap="$(manifest_field_gap "$MANIFEST")"
+if [ -z "$dist_gap" ]; then
+  ok "distribution: required manifest fields present (shared field check)"
+else
+  bad "distribution: required manifest fields present (shared field check)" "gap:$dist_gap"
+fi
 dist_home="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1])).get("homepage",""))' "$MANIFEST" 2>/dev/null)"
 dist_repo="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1])).get("repository",""))' "$MANIFEST" 2>/dev/null)"
 dist_lic="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1])).get("license",""))' "$MANIFEST" 2>/dev/null)"
@@ -1074,6 +1086,38 @@ if [ -n "$dist_pv" ] && [ "$dist_pv" = "$dist_sv" ]; then
   ok "distribution: manifest version equals the lockstep version ($dist_pv)"
 else
   bad "distribution: manifest version equals the lockstep version" "plugin.json=$dist_pv SKILL.md=$dist_sv"
+fi
+
+echo "== shared field-assertion alignment (packaging + distribution catch a removed field) =="
+# Both oracles derive their required-field check from the single manifest_field_gap helper over
+# MANIFEST_REQUIRED_FIELDS, so a removed field cannot pass one oracle while failing the other.
+# (1) The shared helper flags removal of EVERY required field. (2) End-to-end, dropping 'license' is
+# caught by both the packaging gap check and the distribution license-consistency check.
+align_miss=""
+for k in "${MANIFEST_REQUIRED_FIELDS[@]}"; do
+  at="$(mktemp)"
+  python3 -c 'import json,sys; d=json.load(open(sys.argv[1])); d.pop(sys.argv[2],None); json.dump(d,open(sys.argv[3],"w"))' "$MANIFEST" "$k" "$at" 2>/dev/null
+  g="$(manifest_field_gap "$at")"
+  rm -f "$at"
+  case " $g " in *" $k "*) ;; *) align_miss="$align_miss $k";; esac
+done
+if [ -z "$align_miss" ]; then
+  ok "shared alignment: the shared field check flags removal of every required field"
+else
+  bad "shared alignment: the shared field check flags removal of every required field" "not-caught:$align_miss"
+fi
+# End-to-end consistency: drop 'license' and confirm BOTH oracles' checks fail on the same manifest.
+alt="$(mktemp)"
+python3 -c 'import json,sys; d=json.load(open(sys.argv[1])); d.pop("license",None); json.dump(d,open(sys.argv[2],"w"))' "$MANIFEST" "$alt" 2>/dev/null
+align_pkg_gap="$(manifest_field_gap "$alt")"
+align_lic="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1])).get("license",""))' "$alt" 2>/dev/null)"
+rm -f "$alt"
+align_pkg_caught=no; case " $align_pkg_gap " in *" license "*) align_pkg_caught=yes;; esac
+align_dist_caught=no; [ -z "$align_lic" ] && align_dist_caught=yes
+if [ "$align_pkg_caught" = "yes" ] && [ "$align_dist_caught" = "yes" ]; then
+  ok "shared alignment: removing 'license' is caught by BOTH the packaging and distribution oracles"
+else
+  bad "shared alignment: removing 'license' is caught by BOTH oracles" "pkg=$align_pkg_caught dist=$align_dist_caught"
 fi
 
 echo "== dual-manifest decision lock (bumper references no .codex-plugin) =="
