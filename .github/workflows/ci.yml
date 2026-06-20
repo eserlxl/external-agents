@@ -35,5 +35,10 @@ jobs:
           python3 -m pip install --quiet jsonschema
           python3 -c "import json, jsonschema; jsonschema.validate(json.load(open('agents.json')), json.load(open('schema/agents.schema.json')))"
 
+      - name: Validate run-record schema (offline, no live CLI)
+        run: |
+          python3 -m pip install --quiet jsonschema
+          python3 -c "import json, jsonschema; s = json.load(open('schema/run-record.schema.json')); jsonschema.Draft7Validator.check_schema(s); m = {'agent': 'codex', 'model': 'm', 'tier': 'high', 'effort': 'high', 'mode': 'readonly', 'target': '/t', 'rc': 0, 'sec': 1, 'bytes': 10, 'fallback': False, 'timestamp': '2026-06-20T00:00:00Z', 'signals': {'tokens': 'unavailable', 'cost': 'unavailable'}}; jsonschema.validate(m, s); jsonschema.validate(dict(m, run_id='x', project='p'), s); print('run-record schema OK')"
+
       - name: Run the offline test suite
         run: bash tests/run.sh

@@ -21,6 +21,8 @@ Run the same checks CI runs (`.github/workflows/ci.yml`), in this order, until a
 shellcheck scripts/run-agent.sh scripts/bump-version.sh
 # 2. validate agents.json against its schema
 python3 -c "import json, jsonschema; jsonschema.validate(json.load(open('agents.json')), json.load(open('schema/agents.schema.json')))"
+# 2b. validate the run-record schema is well-formed and accepts a sample meta record + index row
+python3 -c "import json, jsonschema; s = json.load(open('schema/run-record.schema.json')); jsonschema.Draft7Validator.check_schema(s); m = {'agent': 'codex', 'model': 'm', 'tier': 'high', 'effort': 'high', 'mode': 'readonly', 'target': '/t', 'rc': 0, 'sec': 1, 'bytes': 10, 'fallback': False, 'timestamp': '2026-06-20T00:00:00Z', 'signals': {'tokens': 'unavailable', 'cost': 'unavailable'}}; jsonschema.validate(m, s); jsonschema.validate(dict(m, run_id='x', project='p'), s)"
 # 3. run the offline test suite
 bash tests/run.sh
 ```
