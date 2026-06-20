@@ -287,6 +287,56 @@ else
   printf '  skip per-agent record test (timeout unavailable)\n'
 fi
 
+echo "== per-run metadata record (.meta.json) presence + resolved values (stub fan-out) =="
+# Every run writes one structured JSON metadata record per agent ($OUT/<a>.meta.json) next to its
+# transcript. Assert it is produced with the declared fields and post-fallback resolved values
+# (incl. the agy quota fallback -> fallback:true at the high tier with the IDE closed), carrying NO
+# transcript text — all offline with stub agents (no real CLI).
+if command -v timeout >/dev/null 2>&1 && command -v python3 >/dev/null 2>&1; then
+  mstub="$(mktemp -d)"
+  for b in agy codex cursor-agent; do printf '#!/usr/bin/env bash\necho "stub transcript text"\n' >"$mstub/$b"; chmod +x "$mstub/$b"; done
+  mtgt="$(mktemp -d)"; modir="$(mktemp -d)"
+  PATH="$mstub:$PATH" EXTERNAL_AGENTS_OUT="$modir" \
+    bash "$RUN" --agent all --effort high --read-only --target "$mtgt" --prompt x >/dev/null 2>&1
+  mproj="$modir/$(basename "$mtgt")"
+  # (1) one meta.json per enabled agent (3).
+  metan=0; for a in agy codex cursor; do [ -f "$mproj/$a.meta.json" ] && metan=$((metan + 1)); done
+  assert_exit "meta: one record per fan-out agent (3)" 3 "$metan"
+  # (2) codex record: well-formed, all declared keys, resolved values, numeric rc/bytes, fallback:false.
+  cmeta="$(python3 -c '
+import json, sys
+try:
+    d = json.load(open(sys.argv[1]))
+except Exception:
+    print("INVALID"); sys.exit(0)
+req = {"agent","model","tier","effort","mode","target","rc","sec","bytes","fallback","timestamp"}
+if not req <= set(d): print("MISSING"); sys.exit(0)
+if d["agent"] != "codex" or d["tier"] != "high" or d["mode"] != "readonly": print("WRONG_VALUES"); sys.exit(0)
+if d["fallback"] is not False: print("BAD_FALLBACK"); sys.exit(0)
+if not isinstance(d["rc"], int) or not isinstance(d["bytes"], int): print("BAD_NUMS"); sys.exit(0)
+print("OK")
+' "$mproj/codex.meta.json" 2>/dev/null)"
+  assert_contains "meta: codex record well-formed with resolved values" "$cmeta" "OK"
+  # (3) agy record: the quota fallback swapped the primary at the high tier (IDE closed) -> fallback:true (boolean).
+  ameta="$(python3 -c '
+import json, sys
+try:
+    d = json.load(open(sys.argv[1]))
+except Exception:
+    print("INVALID"); sys.exit(0)
+print("OK" if d.get("fallback") is True else "NOT_TRUE")
+' "$mproj/agy.meta.json" 2>/dev/null)"
+  assert_contains "meta: agy fallback:true at the high tier (IDE closed)" "$ameta" "OK"
+  # (4) control-plane only — the stub transcript text never reaches the record.
+  case "$(cat "$mproj/codex.meta.json" 2>/dev/null)" in
+    *"stub transcript text"*) bad "meta: record carries no transcript text" "transcript leaked into meta.json";;
+    *)                        ok  "meta: record carries no transcript text";;
+  esac
+  rm -rf "$mstub" "$mtgt" "$modir"
+else
+  printf '  skip per-run metadata record test (timeout/python3 unavailable)\n'
+fi
+
 echo "== cross-agent summary block (stub fan-out, no live CLI) =="
 # A --agent all fan-out prints a compact summary block (one row per agent + expected columns).
 # Assert its shape with stub agents, plus the write-mode target-wide note on a write fan-out.
