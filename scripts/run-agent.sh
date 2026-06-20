@@ -630,12 +630,14 @@ format_masked_argv() {
   printf '%s' "${line# }"
 }
 
-# write_meta_json FILE agent model tier effort mode target rc sec bytes fallback timestamp
+# write_meta_json FILE agent model tier effort mode target rc sec bytes fallback timestamp tokens cost
 # Emit the Phase 5.1 per-run metadata record as ONE JSON object (safe escaping via the same
 # jq/python3 backend the config reads through). It carries ONLY control-plane facts the driver
 # resolved at launch/collect — never transcript text — so it never leaks an agent's free-text or
 # the prompt. `fallback` is passed as "1"/"0" and rendered as a JSON boolean; rc/sec/bytes render
-# as JSON numbers (falling back to the raw string if non-numeric).
+# as JSON numbers (falling back to the raw string if non-numeric). `tokens`/`cost` are the Phase 5.3
+# best-effort signals: a numeric token count renders as a number, the cost string is kept verbatim,
+# and the literal "unavailable" passes through unchanged (never a fabricated number).
 write_meta_json() {
   local file="$1"; shift
   case "$JSON_BACKEND" in
@@ -646,10 +648,13 @@ a = sys.argv[1:]
 def num(x):
     try: return int(x)
     except (ValueError, TypeError): return x
+def sig(x):
+    return int(x) if x.isdigit() else x   # numeric token count -> number; "unavailable"/cost kept as-is
 print(json.dumps({
     "agent": a[0], "model": a[1], "tier": a[2], "effort": a[3], "mode": a[4],
     "target": a[5], "rc": num(a[6]), "sec": num(a[7]), "bytes": num(a[8]),
     "fallback": a[9] == "1", "timestamp": a[10],
+    "signals": {"tokens": sig(a[11]), "cost": a[12]},
 }, separators=(",", ":")))
 PY
       ;;
@@ -657,9 +662,32 @@ PY
       jq -nc \
         --arg agent "$1" --arg model "$2" --arg tier "$3" --arg effort "$4" --arg mode "$5" \
         --arg target "$6" --arg rc "$7" --arg sec "$8" --arg bytes "$9" --arg fb "${10}" --arg ts "${11}" \
+        --arg tok "${12}" --arg cost "${13}" \
         '{agent:$agent, model:$model, tier:$tier, effort:$effort, mode:$mode, target:$target,
           rc:($rc|tonumber? // $rc), sec:($sec|tonumber? // $sec), bytes:($bytes|tonumber? // $bytes),
-          fallback:($fb=="1"), timestamp:$ts}' >"$file"
+          fallback:($fb=="1"), timestamp:$ts,
+          signals:{tokens:($tok|if test("^[0-9]+$") then tonumber else . end), cost:$cost}}' >"$file"
+      ;;
+  esac
+}
+
+# extract_signal TRANSCRIPT AGENT SIGNAL -> the best-effort signal value, or empty if none recognized.
+# Phase 5.3 cost/latency extraction: capability-aware per agent (currently a shared, conservative
+# recognizer for every known agent — the per-agent case is the hook for future agent-specific rules),
+# matching ONLY tightly-anchored shapes so ordinary transcript prose is never mistaken for a metric.
+# The caller maps an empty result to the explicit "unavailable" marker — never a fabricated number.
+extract_signal() {
+  local file="$1" agent="$2" signal="$3" line
+  [ -f "$file" ] || return 0
+  case "$agent" in agy|codex|claude|cursor) : ;; *) return 0;; esac
+  case "$signal" in
+    tokens)
+      line="$(grep -ioE '(tokens[[:space:]]+used|total[[:space:]]+tokens)[[:space:]]*[:=][[:space:]]*[0-9]+|[0-9]+[[:space:]]+tokens' "$file" 2>/dev/null | head -1)"
+      [ -n "$line" ] && printf '%s' "$line" | grep -oE '[0-9]+' | head -1
+      ;;
+    cost)
+      line="$(grep -ioE '(total[[:space:]]+)?cost[[:space:]]*[:=][[:space:]]*\$[0-9]+(\.[0-9]+)?' "$file" 2>/dev/null | head -1)"
+      [ -n "$line" ] && printf '%s' "$line" | grep -oE '\$[0-9]+(\.[0-9]+)?' | head -1
       ;;
   esac
 }
@@ -693,7 +721,7 @@ PY
 }
 
 run_one() {  # agent  (cwd=TARGET) — stdout->$OUT/<a>.md (redacted), stderr->.err, rc/.sec, .meta.json
-  local a="$1" t0 t1 rc ts bytes reff
+  local a="$1" t0 t1 rc ts bytes reff tok cost
   build_argv "$a" || return 1
   # Record the resolved launch argv with the prompt masked — identical to --dry-run — so a
   # live run's exact argv can be verified without ever persisting the prompt text.
@@ -716,8 +744,11 @@ run_one() {  # agent  (cwd=TARGET) — stdout->$OUT/<a>.md (redacted), stderr->.
   # inspectable without re-parsing free-text output. `bytes` matches the collect loop's measure.
   bytes=$(wc -c <"$OUT/$a.md" 2>/dev/null | tr -d ' '); [ -n "$bytes" ] || bytes=0
   reff="$(cfg effort "$a" "$TIER")"
+  # Phase 5.3 — best-effort cost/latency signals from the (redacted) transcript; absent -> "unavailable".
+  tok="$(extract_signal "$OUT/$a.md" "$a" tokens)";  [ -n "$tok" ]  || tok="unavailable"
+  cost="$(extract_signal "$OUT/$a.md" "$a" cost)";   [ -n "$cost" ] || cost="unavailable"
   write_meta_json "$OUT/$a.meta.json" "$a" "${RESOLVED_MODEL:-(cli default)}" "${TIER:-(none)}" \
-    "${reff:-(none)}" "$MODE" "$TARGET" "$rc" "$((t1 - t0))" "$bytes" "$FALLBACK_TAKEN" "$ts"
+    "${reff:-(none)}" "$MODE" "$TARGET" "$rc" "$((t1 - t0))" "$bytes" "$FALLBACK_TAKEN" "$ts" "$tok" "$cost"
 }
 
 # --- dry-run: print resolved argv and exit ----------------------------------------
