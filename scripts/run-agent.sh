@@ -700,6 +700,7 @@ extract_signal() {
 # Append ONE JSON-Lines row to the run index: the agent's per-run metadata record augmented with the
 # run id (groups a fan-out) and the project namespace. Append-only and control-plane only (the meta
 # record already is), so the index never accrues transcript text. No-op if the meta record is absent.
+# Read-only cross-run trends over this index are produced by scripts/run-history-report.sh.
 append_index_row() {
   local index="$1" meta="$2" run_id="$3" project="$4"
   [ -f "$meta" ] || return 0
