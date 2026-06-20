@@ -101,6 +101,7 @@ DISCOVER=0
 DRYRUN=0
 VERSION=0
 JSON=0
+CONSENSUS=0                  # --consensus: surface the deterministic outcome-consensus verdict (additive)
 
 usage() {
   cat <<'EOF'
@@ -163,6 +164,7 @@ while [ $# -gt 0 ]; do
     --check) CHECK=1; shift;;
     --discover) DISCOVER=1; shift;;
     --json) JSON=1; shift;;
+    --consensus) CONSENSUS=1; shift;;
     -y|--yes) YES=1; shift;;
     --dry-run) DRYRUN=1; shift;;
     --version|-V) VERSION=1; shift;;
@@ -908,6 +910,13 @@ done
 # Deterministic outcome agreement from the per-agent success tally (used by both the human summary
 # and the opt-in JSON). all-ok = every agent succeeded; all-fail = none did; else mixed.
 if [ "$fail" -eq 0 ]; then AGREEMENT="all-ok"; elif [ "$ok" -eq 0 ]; then AGREEMENT="all-fail"; else AGREEMENT="mixed"; fi
+# Deterministic outcome-consensus verdict (Phase 9.5): a majority/quorum over the SAME per-agent
+# success tally — content-free (never transcript text), and additive (surfaced only under --consensus).
+# consensus = strict majority succeeded; none = zero succeeded; no-quorum = otherwise (tie / minority).
+panel=$((ok + fail))
+if   [ "$panel" -gt 0 ] && [ $((2 * ok)) -gt "$panel" ]; then CONSENSUS_VERDICT="consensus"
+elif [ "$ok" -eq 0 ];                                    then CONSENSUS_VERDICT="none"
+else                                                          CONSENSUS_VERDICT="no-quorum"; fi
 # Cross-agent summary: a compact digest with one row per fan-out agent, rendered from the Phase
 # 4.1 records — beside (not instead of) the verbatim transcripts above. Fan-out only; single-agent
 # runs print no summary, and the transcript echo + the stderr tally are unchanged.
@@ -938,6 +947,9 @@ if [ "${#RUN[@]}" -gt 1 ]; then
     all-fail) echo "  agreement: all-fail (0/$((ok + fail)) agents succeeded)";;
     *)        echo "  agreement: mixed ($ok ok, $fail failed)";;
   esac
+  # Additive deterministic consensus verdict (opt-in via --consensus) — an OUTCOME verdict over the
+  # success tally, NOT semantic content agreement (which needs a confirmed schema).
+  [ "$CONSENSUS" = "1" ] && echo "  consensus: $CONSENSUS_VERDICT ($ok/$((ok + fail)) agents succeeded)"
   echo
 fi
 # After a write run, PRODUCE the verification (not just recommend it): show what
