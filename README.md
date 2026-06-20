@@ -231,6 +231,24 @@ when the quota is unconfirmable (IDE closed / not logged in) it degrades to the 
 spending the unconfirmed primary. It also records the real output's keys/types (no values) as a
 schema-drift detector.
 
+## Fan-out observability
+
+A `--agent all` fan-out records, per agent, a **result record** built entirely from **control-plane
+facts** — values the driver already resolved at launch/collect time, **never parsed from the
+transcript**:
+
+| field | source |
+|-------|--------|
+| `agent` | the agent name |
+| `model` | the **resolved** model (post-fallback for agy) |
+| `tier` | the effort tier (`--effort`, else `default_tier`) |
+| `effort` | the tier's native effort (codex/claude) |
+| `mode` | `read-only` / `write` |
+| `rc` | the agent process exit code |
+| `sec` | wall-clock seconds |
+| `bytes` | redacted transcript size |
+| `fallback` | `1` iff the agy quota fallback swapped the primary model |
+
 ## Safety
 
 For the full trust-boundary analysis and the per-CLI enforcement matrix, see

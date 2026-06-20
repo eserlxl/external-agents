@@ -535,10 +535,11 @@ if [ "$MODE" = "write" ] && [ "$DRYRUN" = "0" ] && [ -z "$TOP" ]; then
 fi
 
 # --- build one agent's argv  (model/effort resolved from the tier) ----------------
-build_argv() {  # agent ; sets global ARGV[]
+build_argv() {  # agent ; sets global ARGV[], RESOLVED_MODEL, FALLBACK_TAKEN
   local a="$1" m e fb st
   m="${MODEL:-$(cfg model "$a" "$TIER")}"
   e="$(cfg effort "$a" "$TIER")"
+  FALLBACK_TAKEN=0          # set to 1 below iff the agy quota fallback swaps the primary model
   ARGV=()
   case "$a" in
     agy)
@@ -555,8 +556,8 @@ build_argv() {  # agent ; sets global ARGV[]
         st="$(agy_model_status "$m")"
         case "$st" in
           available) ;;
-          unknown) echo "run-agent: NOTE — agy quota for '$m' is unknown (open the Antigravity IDE or run 'antigravity-usage login' to enable it); using fallback '$fb'." >&2; m="$fb";;
-          *)       echo "run-agent: NOTE — agy '$m' is $st per antigravity-usage; using fallback '$fb'." >&2; m="$fb";;
+          unknown) echo "run-agent: NOTE — agy quota for '$m' is unknown (open the Antigravity IDE or run 'antigravity-usage login' to enable it); using fallback '$fb'." >&2; m="$fb"; FALLBACK_TAKEN=1;;
+          *)       echo "run-agent: NOTE — agy '$m' is $st per antigravity-usage; using fallback '$fb'." >&2; m="$fb"; FALLBACK_TAKEN=1;;
         esac
       fi
       [ -n "$m" ] && ARGV+=(--model "$m");;
@@ -583,6 +584,7 @@ build_argv() {  # agent ; sets global ARGV[]
       ARGV+=(-- "$PROMPT"); PROMPT_IDX=$(( ${#ARGV[@]} - 1 ));;
     *) echo "run-agent: unknown agent '$a'" >&2; return 1;;
   esac
+  RESOLVED_MODEL="$m"       # the model actually used (post-fallback for agy); may be empty (cli default)
   return 0
 }
 
@@ -624,6 +626,10 @@ run_one() {  # agent  (cwd=TARGET) — stdout->$OUT/<a>.md (redacted), stderr->.
   # Record the resolved launch argv with the prompt masked — identical to --dry-run — so a
   # live run's exact argv can be verified without ever persisting the prompt text.
   format_masked_argv >"$OUT/$a.argv"
+  # Record the control-plane facts build_argv resolved (post-fallback model, whether the agy
+  # quota fallback was taken) so the collect loop builds the per-agent record without re-parsing.
+  printf '%s' "$RESOLVED_MODEL"  >"$OUT/$a.model"
+  printf '%s' "$FALLBACK_TAKEN"  >"$OUT/$a.fallback"
   t0=$(date +%s 2>/dev/null || echo 0)
   # Pipe stdout through redact so a secret-shaped token never persists to disk or echo;
   # rc is the agent's (PIPESTATUS[0]), not redact's.
