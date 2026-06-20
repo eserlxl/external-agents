@@ -18,7 +18,7 @@
     },
     "agents": {
       "type": "object",
-      "description": "Map of agent name to its config. Only the agy agent's tiers may carry a 'fallback'; every other agent uses the no-fallback tier shape.",
+      "description": "Map of agent name to its config. Only the agy agent's tiers may carry a 'fallback'; every other agent uses the no-fallback tier shape. A NEW agent is added by an entry here (accepted via additionalProperties as agentNoFallback) plus a driver registry entry — see docs/extensibility.md.",
       "minProperties": 1,
       "properties": {
         "agy": { "$ref": "#/definitions/agentWithFallback" }

@@ -319,6 +319,12 @@ PY
   assert_contains "schema rejects non-object tiers"            "$(schema_check "$nfx")" "REJECTED"
   printf '%s' '{"default_tier":"medium","agents":{"codex":{"enabled":true,"tiers":{"high":{"model":"m","fallback":"g"}}}}}' >"$nfx"
   assert_contains "schema rejects fallback on a non-agy agent" "$(schema_check "$nfx")" "REJECTED"
+  # Phase 9.3: a NEW agent (not one of the built-in four) must validate via the additionalProperties
+  # path, using the no-fallback tier shape — proving the registry/agents.json extensibility contract.
+  printf '%s' '{"default_tier":"medium","agents":{"fixture":{"enabled":true,"tiers":{"low":{"model":"fix-small"},"medium":{"model":"fix-mid"}}}}}' >"$nfx"
+  assert_contains "schema accepts a new (non-built-in) agent block via additionalProperties" "$(schema_check "$nfx")" "OK"
+  printf '%s' '{"default_tier":"medium","agents":{"fixture":{"enabled":true,"tiers":{"high":{"model":"m","fallback":"g"}}}}}' >"$nfx"
+  assert_contains "schema rejects a fallback on a new (non-agy) agent" "$(schema_check "$nfx")" "REJECTED"
   rm -f "$nfx"
 else
   skip "schema validation (python3 jsonschema not installed)"
