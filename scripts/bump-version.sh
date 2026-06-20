@@ -9,10 +9,11 @@
 # host manifest — so the bumper touches only .claude-plugin/plugin.json.)
 #
 # This script updates version numbers and the changelog — it does NOT create a
-# git tag or GitHub release. Tags should only be created at release milestones:
-# every 25-50 commits or when a meaningful feature ships (new flag, major
-# behaviour change). Run bump-version.sh freely during development; tag and
-# push the release manually when the milestone is reached.
+# git tag or GitHub release. The full release procedure — clean tree, dry-run
+# preview, real bump, commit, the annotated vX.Y.Z tag, push, and the
+# tag-equals-version check, plus the cadence heuristic — is the canonical runbook
+# in RELEASING.md; follow it when cutting a release. Run bump-version.sh freely
+# during development.
 #
 # Usage:
 #   scripts/bump-version.sh <major|minor|patch|X.Y.Z> [-m "changelog note"]
