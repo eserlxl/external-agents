@@ -969,6 +969,22 @@ else
   bad "e2e_make_fixture produced a fixture for capture" "no path"
 fi
 
+echo "== e2e edit-non-git recipe oracle (stub-driven, offline) =="
+# Drive the non-git write recipe against a stub agent: the driver must WARN there is no git baseline
+# and SUPPRESS the post-write verification block. The stub keeps it offline; EXTERNAL_AGENTS_LIVE=1 arms it.
+if command -v timeout >/dev/null 2>&1; then
+  eng="$(mktemp -d)"; engd="$(mktemp -d)"
+  printf '#!/usr/bin/env bash\nprintf "edited\\n"\nprintf "appended\\n" >> notes.txt\n' >"$eng/codex"; chmod +x "$eng/codex"
+  eng_out="$(PATH="$eng:$PATH" EXTERNAL_AGENTS_LIVE=1 EXTERNAL_AGENTS_OUT="$engd" \
+    bash "$ROOT/tests/e2e/edit-non-git.sh" codex 2>&1)"; eng_rc=$?
+  assert_exit     "edit-non-git recipe: stub write -> pass (exit 0)"  0 "$eng_rc"
+  assert_contains "edit-non-git recipe: no-baseline warning captured" "$eng_out" "no-baseline warning captured"
+  assert_contains "edit-non-git recipe: post-write block suppressed"  "$eng_out" "post-write block correctly suppressed"
+  rm -rf "$eng" "$engd"
+else
+  skip "e2e edit-non-git recipe oracle (timeout unavailable)"
+fi
+
 echo "== e2e review-readonly recipe oracle (stub-driven, offline) =="
 # Drive the read-only review recipe against a stub agent: a clean stub (no writes) must PASS with
 # the enforced no-mutation verdict; a rogue stub that writes into the fixture must FAIL the recipe,
