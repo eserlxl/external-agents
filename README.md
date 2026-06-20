@@ -290,6 +290,24 @@ exit-code tally and the target tree's git state, never from interpreting the age
 that needs a human-confirmed cross-agent summary schema and live-run evidence, so it is deliberately
 deferred. Read the verbatim transcripts to compare the agents' actual content.
 
+### JSON run summary (`--json`)
+
+`--json` additionally emits one machine-readable JSON document (in addition to the human output,
+which is unchanged) with this shape — run-level fields plus one object per agent and the agreement
+signal, all control-plane facts (no transcript content):
+
+```json
+{
+  "mode": "readonly", "tier": "high", "ok": 3, "fail": 0, "count": 3, "agreement": "all-ok",
+  "agents": [
+    { "agent": "agy", "model": "Gemini 3.5 Flash (High)", "tier": "high", "effort": "(none)",
+      "mode": "readonly", "rc": 0, "sec": 0, "bytes": 23, "fallback": true }
+  ]
+}
+```
+
+The offline suite validates that the emitted document is well-formed and carries these required keys.
+
 ## Safety
 
 For the full trust-boundary analysis and the per-CLI enforcement matrix, see

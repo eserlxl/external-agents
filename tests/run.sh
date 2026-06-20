@@ -340,6 +340,35 @@ else
   printf '  skip agreement-signal test (timeout unavailable)\n'
 fi
 
+echo "== opt-in JSON run summary (--json) shape validation (stub fan-out) =="
+# The --json document must be well-formed and carry the declared keys (run-level + per-agent), only
+# when --json is set, and never any transcript content. Validate the shape with python3.
+if command -v timeout >/dev/null 2>&1 && command -v python3 >/dev/null 2>&1; then
+  jstub="$(mktemp -d)"; for b in agy codex cursor-agent; do printf '#!/usr/bin/env bash\necho "resp text"\n' >"$jstub/$b"; chmod +x "$jstub/$b"; done
+  jtgt="$(mktemp -d)"; jod="$(mktemp -d)"
+  json_doc="$(PATH="$jstub:$PATH" EXTERNAL_AGENTS_OUT="$jod" bash "$RUN" --agent all --effort high --read-only --json --target "$jtgt" --prompt x 2>/dev/null | tail -1)"
+  jval="$(printf '%s' "$json_doc" | python3 -c '
+import json, sys
+try:
+    d = json.load(sys.stdin)
+except Exception as e:
+    print("INVALID:", e); sys.exit(0)
+if not {"mode","tier","ok","fail","count","agreement","agents"}.issubset(d): print("MISSING_TOP"); sys.exit(0)
+if not isinstance(d["agents"], list) or not d["agents"]: print("NO_AGENTS"); sys.exit(0)
+ak = {"agent","model","tier","effort","mode","rc","sec","bytes","fallback"}
+if any(not ak.issubset(a) for a in d["agents"]): print("MISSING_AGENT_KEYS"); sys.exit(0)
+if d["count"] != len(d["agents"]): print("COUNT_MISMATCH"); sys.exit(0)
+print("OK")
+' 2>/dev/null)"
+  assert_contains "JSON: emitted summary validates (well-formed + required keys)" "$jval" "OK"
+  case "$json_doc" in *"resp text"*) bad "JSON: carries no transcript content" "transcript leaked into the JSON";; *) ok "JSON: carries no transcript content";; esac
+  nojson="$(PATH="$jstub:$PATH" EXTERNAL_AGENTS_OUT="$jod" bash "$RUN" --agent all --read-only --target "$jtgt" --prompt x 2>/dev/null)"
+  case "$nojson" in *'"agreement"'*) bad "JSON: absent without --json" "JSON document appeared without the flag";; *) ok "JSON: absent without --json";; esac
+  rm -rf "$jstub" "$jtgt" "$jod"
+else
+  printf '  skip JSON summary validation (timeout/python3 unavailable)\n'
+fi
+
 echo "== transcript secret-redaction (stub agent, real redact path) =="
 # run_stub_transcript TEXT FILEVAR -> stdout = the driver's echoed (redacted) transcript;
 # the persisted (redacted) transcript file content is written to the path FILEVAR (a disk
