@@ -1552,6 +1552,44 @@ else
   skip "run-history analytics trends oracle (python3 unavailable)"
 fi
 
+echo "== run-history analytics filters (--agent/--project/--since/--until; both backends; AND-compose) =="
+# The report scopes WHICH rows are aggregated via four AND-composed filters over existing per-row
+# fields (agent/project/timestamp); an absent/empty filter selects everything. Both backends apply the
+# IDENTICAL keep predicate, so the filtered run-count is value-equivalent across jq and python3.
+if command -v python3 >/dev/null 2>&1; then
+  RHF="$ROOT/scripts/run-history-report.sh"
+  ffix="$(mktemp -d)"; FIDX="$ffix/index.jsonl"
+  printf '%s\n' \
+    '{"run_id":"a","timestamp":"2026-06-01T00:00:00Z","project":"proj-a","agent":"agy","rc":0,"sec":2,"bytes":100,"error_class":"ok"}' \
+    '{"run_id":"a","timestamp":"2026-06-01T00:00:00Z","project":"proj-a","agent":"codex","rc":0,"sec":4,"bytes":200,"error_class":"ok"}' \
+    '{"run_id":"b","timestamp":"2026-06-10T00:00:00Z","project":"proj-b","agent":"codex","rc":1,"sec":6,"bytes":50,"error_class":"transient"}' >"$FIDX"
+  frestr="$(mktemp -d)"; mk_restricted_bin "$frestr"   # python3, NO jq -> forces the python3 backend
+  f_eq() { if [ "$3" = "$2" ]; then ok "$1"; else bad "$1" "expected $2, got $3"; fi; }
+  f_runs() {  # backend(jq|py) filter-args... -> the "runs" count of the filtered aggregate
+    local be="$1"; shift
+    if [ "$be" = py ]; then PATH="$frestr/bin" "$frestr/bin/bash" "$RHF" --json "$@" "$FIDX" 2>/dev/null \
+      | python3 -c 'import json,sys; print(json.load(sys.stdin)["runs"])'
+    else bash "$RHF" --json "$@" "$FIDX" 2>/dev/null \
+      | python3 -c 'import json,sys; print(json.load(sys.stdin)["runs"])'; fi
+  }
+  for be in jq py; do
+    if [ "$be" = jq ] && ! command -v jq >/dev/null 2>&1; then skip "filters[jq] (jq unavailable)"; continue; fi
+    f_eq "filters[$be]: global aggregates all rows"           3 "$(f_runs "$be")"
+    f_eq "filters[$be]: --agent codex scopes to that agent"   2 "$(f_runs "$be" --agent codex)"
+    f_eq "filters[$be]: --project proj-a scopes to project"   2 "$(f_runs "$be" --project proj-a)"
+    f_eq "filters[$be]: --since excludes earlier rows"        1 "$(f_runs "$be" --since 2026-06-05T00:00:00Z)"
+    f_eq "filters[$be]: --until excludes later rows"          2 "$(f_runs "$be" --until 2026-06-05T00:00:00Z)"
+    f_eq "filters[$be]: agent+project AND-compose"            1 "$(f_runs "$be" --agent codex --project proj-b)"
+    f_eq "filters[$be]: empty --agent selects everything"     3 "$(f_runs "$be" --agent '')"
+  done
+  # Read-only: the index fixture must be byte-identical after a filtered analytic run.
+  f_before="$(cksum "$FIDX")"; bash "$RHF" --json --agent codex "$FIDX" >/dev/null 2>&1; f_after="$(cksum "$FIDX")"
+  f_eq "filters: index byte-identical after a filtered analytic (read-only)" "$f_before" "$f_after"
+  rm -rf "$ffix" "$frestr"
+else
+  skip "run-history analytics filters oracle (python3 unavailable)"
+fi
+
 echo "== run-history malformed-row tolerance (jq/python3 parity on a torn append; read-only) =="
 # A crashed/torn append can leave the append-only index with a final unparseable line. Both backends
 # must skip it and still report (the header's "value-equivalent JSON" contract) — never abort. This is

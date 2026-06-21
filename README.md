@@ -639,6 +639,14 @@ A human-readable table is also available. The surface is **strictly read-only** 
 index, and the field contract it consumes is in
 [`docs/run-record-contract.md`](docs/run-record-contract.md).
 
+**Scoping the report.** By default every row is aggregated. Four optional, AND-composed filters narrow
+*which* rows the metrics are computed over — `--agent A`, `--project P`, `--since TS`, and `--until TS`
+(timestamps are the per-row UTC ISO-8601 `timestamp`, compared lexicographically; an absent or empty
+filter selects everything). They scope the **input**, not the metric set, so the output shape and the
+jq/python3 value-equivalence are unchanged — e.g.
+`run-history-report.sh --agent codex --since 2026-06-01T00:00:00Z` reports just codex's trend since
+June, replacing a hand-written `jq 'select(.agent=="codex")'` pre-filter.
+
 **Consumer caveat.** The `tokens` and `cost` aggregates are built from **best-effort,
 CLI-self-reported** signals — they are **not billing-grade** and must not be treated as authoritative
 cost (see [Cost, latency, and quality signals](#cost-latency-and-quality-signals)). For latency and

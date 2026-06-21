@@ -14,9 +14,15 @@
 # never counted as 0 (which would understate the true average). The full metric set + JSON output
 # shape are documented in README "Run-history analytics" and docs/run-record-contract.md.
 #
-# Usage:  run-history-report.sh [--json] [INDEX]
-#   --json   emit the machine-readable JSON document (default: a human-readable table)
-#   INDEX    path to index.jsonl (default: ${EXTERNAL_AGENTS_OUT:-$HOME/.external-agents/logs}/index.jsonl)
+# Usage:  run-history-report.sh [--json] [--agent A] [--project P] [--since TS] [--until TS] [INDEX]
+#   --json       emit the machine-readable JSON document (default: a human-readable table)
+#   --agent A    aggregate only rows whose resolved agent == A
+#   --project P  aggregate only rows whose project namespace == P
+#   --since TS   aggregate only rows with timestamp >= TS (UTC ISO-8601, lexicographic)
+#   --until TS   aggregate only rows with timestamp <= TS (UTC ISO-8601, lexicographic)
+#   INDEX        path to index.jsonl (default: ${EXTERNAL_AGENTS_OUT:-$HOME/.external-agents/logs}/index.jsonl)
+# Filters compose (logical AND); an absent/empty filter selects everything. They scope WHICH rows are
+# aggregated — the metric set, both backends, and value-equivalence are otherwise unchanged.
 #
 # Metrics are computed by jq (preferred) or python3 (fallback); the two backends produce
 # value-equivalent JSON (numeric formatting of whole-number floats may differ — consumers parse JSON,
@@ -27,10 +33,15 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)"
 
 WANT_JSON=0
 INDEX=""
+F_AGENT=""; F_PROJECT=""; F_SINCE=""; F_UNTIL=""
 while [ $# -gt 0 ]; do
   case "$1" in
     --json) WANT_JSON=1; shift;;
-    -h|--help) sed -n '5,20p' "$ROOT/scripts/run-history-report.sh"; exit 0;;
+    --agent)   F_AGENT="${2:-}";   shift 2;;
+    --project) F_PROJECT="${2:-}"; shift 2;;
+    --since)   F_SINCE="${2:-}";   shift 2;;
+    --until)   F_UNTIL="${2:-}";   shift 2;;
+    -h|--help) sed -n '5,25p' "$ROOT/scripts/run-history-report.sh"; exit 0;;
     -*) echo "run-history-report: unknown flag: $1" >&2; exit 2;;
     *)  INDEX="$1"; shift;;
   esac
@@ -41,15 +52,22 @@ if [ ! -f "$INDEX" ]; then
   exit 1
 fi
 
-# compute_metrics INDEX -> the metrics JSON (compact, one document). jq preferred, python3 fallback.
+# compute_metrics INDEX [AGENT PROJECT SINCE UNTIL] -> the metrics JSON (compact, one document).
+# The four filters scope WHICH rows are aggregated (logical AND; empty = no constraint). Both backends
+# apply the IDENTICAL keep predicate immediately after a row parses, so value-equivalence is preserved.
+# jq preferred, python3 fallback.
 compute_metrics() {
-  local idx="$1"
+  local idx="$1" fa="${2:-}" fp="${3:-}" fs="${4:-}" fu="${5:-}"
   if command -v jq >/dev/null 2>&1; then
     # Read line-by-line and drop any blank/unparseable line (fromjson?), so a torn append in the
     # append-only index degrades exactly as the python3 backend does (skip the bad row) instead of
     # aborting the whole report — the two backends stay value-equivalent over a corrupt index.
-    jq -n -R '
-      [inputs | fromjson? // empty]
+    jq -n -R --arg fa "$fa" --arg fp "$fp" --arg fs "$fs" --arg fu "$fu" '
+      [inputs | fromjson? // empty
+        | select(($fa == "" or .agent == $fa)
+             and ($fp == "" or .project == $fp)
+             and ($fs == "" or (.timestamp // "") >= $fs)
+             and ($fu == "" or (.timestamp // "") <= $fu))]
       | def r6: (. * 1000000 | round) / 1000000;
       (map(.error_class // (if .rc == 0 then "ok" else "unknown" end)))            as $cls
       | (map(.sec    | numbers))                                                   as $sec
@@ -73,9 +91,23 @@ compute_metrics() {
         }
     ' "$idx"
   elif command -v python3 >/dev/null 2>&1; then
-    python3 - "$idx" <<'PY'
-import json, sys
+    FA="$fa" FP="$fp" FS="$fs" FU="$fu" python3 - "$idx" <<'PY'
+import json, os, sys
 from collections import Counter
+FA = os.environ.get("FA", ""); FP = os.environ.get("FP", "")
+FS = os.environ.get("FS", ""); FU = os.environ.get("FU", "")
+def keep(r):
+    # IDENTICAL predicate to the jq backend: AND of the four filters; empty filter = no constraint.
+    if FA and r.get("agent") != FA:
+        return False
+    if FP and r.get("project") != FP:
+        return False
+    ts = r.get("timestamp") or ""
+    if FS and ts < FS:
+        return False
+    if FU and ts > FU:
+        return False
+    return True
 rows = []
 with open(sys.argv[1]) as f:
     for ln in f:
@@ -83,9 +115,11 @@ with open(sys.argv[1]) as f:
         if not ln:
             continue
         try:
-            rows.append(json.loads(ln))
+            row = json.loads(ln)
         except Exception:
             continue
+        if keep(row):
+            rows.append(row)
 n = len(rows)
 def isnum(x):
     return isinstance(x, (int, float)) and not isinstance(x, bool)
@@ -161,7 +195,7 @@ PY
   fi
 }
 
-metrics_json="$(compute_metrics "$INDEX")" || exit $?
+metrics_json="$(compute_metrics "$INDEX" "$F_AGENT" "$F_PROJECT" "$F_SINCE" "$F_UNTIL")" || exit $?
 if [ "$WANT_JSON" = "1" ]; then
   printf '%s\n' "$metrics_json"
 else
