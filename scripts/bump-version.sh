@@ -140,10 +140,18 @@ if [ -z "$DRY_RUN" ]; then
   done
   _bump_restore() {
     local _i
+    local -a _failed=()
     for _i in "${!_bump_targets[@]}"; do
-      [ -f "$BUMP_BACKUP/$_i" ] && cp -p "$BUMP_BACKUP/$_i" "${_bump_targets[$_i]}" 2>/dev/null || true
+      if [ -f "$BUMP_BACKUP/$_i" ] && cp -p "$BUMP_BACKUP/$_i" "${_bump_targets[$_i]}" 2>/dev/null; then
+        continue
+      fi
+      _failed+=("${_bump_targets[$_i]}")
     done
-    echo "bump-version: a step failed or was interrupted; restored all files to their pre-bump state." >&2
+    if [ "${#_failed[@]}" -eq 0 ]; then
+      echo "bump-version: a step failed or was interrupted; restored all files to their pre-bump state." >&2
+    else
+      echo "bump-version: a step failed or was interrupted; restore INCOMPLETE — could not restore: ${_failed[*]}. Recover manually from $BUMP_BACKUP before re-running." >&2
+    fi
   }
   trap '_bump_restore' ERR INT TERM
 fi
