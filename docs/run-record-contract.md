@@ -48,6 +48,43 @@ means no signal was recognized and is **never** a fabricated number (see the REA
 [signals](../README.md#cost-latency-and-quality-signals) caveat). For latency/size prefer the
 driver-measured `sec`/`bytes` over the agent-reported signals.
 
+## Example records
+
+A `meta.json` record (one per agent per run — the `meta.json record` schema branch, with **no**
+`run_id` / `project`):
+
+```json
+{
+  "agent": "codex",
+  "model": "gpt-5.5",
+  "tier": "high",
+  "effort": "high",
+  "mode": "readonly",
+  "target": "/home/me/project",
+  "rc": 0,
+  "sec": 12,
+  "bytes": 2048,
+  "fallback": false,
+  "timestamp": "2026-06-20T12:00:00Z",
+  "error_class": "ok",
+  "attempts": 1,
+  "retried": false,
+  "signals": { "tokens": 1530, "cost": "$0.04" }
+}
+```
+
+The matching `index.jsonl` row is the **same** record augmented with the fan-out `run_id` and the
+`project` namespace (the `index.jsonl row` schema branch). One such line is appended per agent per run:
+
+```json
+{"agent":"codex","model":"gpt-5.5","tier":"high","effort":"high","mode":"readonly","target":"/home/me/project","rc":0,"sec":12,"bytes":2048,"fallback":false,"timestamp":"2026-06-20T12:00:00Z","error_class":"ok","attempts":1,"retried":false,"signals":{"tokens":1530,"cost":"$0.04"},"run_id":"run-2026-06-20T120000Z-a1b2","project":"external-agents"}
+```
+
+Both examples validate against [`../schema/run-record.schema.json`](../schema/run-record.schema.json):
+the resolved `signals` object is always present (here with live numbers; an unrecognized signal is the
+literal `unavailable`, never a fabricated `0`), and `error_class`/`attempts`/`retried` are the
+additive Phase 8.2 fields.
+
 ## Stability policy (additive-only)
 
 The record is a versioned contract evolved **in lockstep** with the plugin version
