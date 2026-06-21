@@ -160,6 +160,25 @@ else
   bad "enforcement bidirectional: registry agent set == threat-model matrix agent set" "reg=[$reg_one] matrix=[$mat_one]"
 fi
 
+echo "== agent-inventory doc-drift guard (README agent set == agents.json) =="
+# The user-facing README must document exactly the configured agent inventory. The headline dispatch
+# badge enumerates the agent set; pin it (and the prose) to agents.json keys so a README that omits a
+# configured agent, or names a removed/renamed one, fails offline — drift no enforcement guard catches
+# (those pin registry<->threat-model, never README). Intentionally fails red on either side's drift.
+inv_json="$(jq -r '.agents | keys[]' "$ROOT/agents.json" 2>/dev/null | sort -u)"
+badge_raw="$(grep -oE 'badge/dispatch-[^)]*\.svg' "$ROOT/README.md" | head -1)"
+badge_agents="$(printf '%s' "$badge_raw" | sed -E 's#badge/dispatch-##; s#-[0-9A-Fa-f]{6}\.svg$##' | sed 's/%20%C2%B7%20/\n/g' | sort -u)"
+if [ -n "$inv_json" ] && [ "$inv_json" = "$badge_agents" ]; then
+  ok "agent-inventory: README dispatch badge names exactly the agents.json agent set"
+else
+  ij="$(printf '%s' "$inv_json" | tr '\n' ' ')"; ba="$(printf '%s' "$badge_agents" | tr '\n' ' ')"
+  bad "agent-inventory: README dispatch badge names exactly the agents.json agent set" "agents.json=[$ij] badge=[$ba]"
+fi
+for a in $inv_json; do
+  if grep -qw -- "$a" "$ROOT/README.md"; then ok "agent-inventory: README documents configured agent '$a'"
+  else bad "agent-inventory: README documents configured agent '$a'" "configured in agents.json but absent from README"; fi
+done
+
 echo "== jq / python3 config-backend parity (--list byte-identical) =="
 out_jq="$(bash "$RUN" --list 2>/dev/null)"
 tdir="$(mktemp -d)"
