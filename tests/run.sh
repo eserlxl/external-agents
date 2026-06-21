@@ -1302,6 +1302,30 @@ else
   skip "recoverability + rotation oracle (python3 unavailable)"
 fi
 
+echo "== run-history prune keeps newest by mtime (same-second rotation collision; offline) =="
+# Regression: KEEP-based prune must keep the most-RECENT archives. A same-second rotation names the
+# second file index-<ts>.1.jsonl, which sorts BEFORE the base index-<ts>.jsonl lexicographically, so a
+# name sort would keep the older and prune the newer. Pre-create a collision pair with disagreeing
+# name/mtime order (the `.1` file NEWER by mtime), rotate once with KEEP=2, and assert the mtime-newer
+# archive survives while the oldest is pruned.
+pbase="$(mktemp -d)"; mkdir -p "$pbase/archive"
+pts=20260101T000000Z
+touch -d '2026-01-01T00:00:00Z' "$pbase/archive/index-$pts.jsonl"
+touch -d '2026-01-01T00:00:30Z' "$pbase/archive/index-$pts.1.jsonl"
+printf '{"rc":0}\n' >"$pbase/index.jsonl"
+EXTERNAL_AGENTS_ARCHIVE_KEEP=2 bash "$ROOT/scripts/run-history-maintain.sh" --base "$pbase" --force >/dev/null 2>&1
+if [ -e "$pbase/archive/index-$pts.1.jsonl" ]; then
+  ok "prune: keeps the mtime-newer collision archive (index-<ts>.1.jsonl survives)"
+else
+  bad "prune: keeps the mtime-newer collision archive" "the newer .1 archive was pruned (name-sort bug)"
+fi
+if [ -e "$pbase/archive/index-$pts.jsonl" ]; then
+  bad "prune: drops the oldest archive past KEEP" "the oldest archive survived (KEEP=2 over 3 archives)"
+else
+  ok "prune: drops the oldest archive past KEEP (mtime order)"
+fi
+rm -rf "$pbase"
+
 echo "== Phase 8 resilience field parity + schema (error_class/attempts/retried; both backends) =="
 # Consolidation: the Phase 8.2 resilience fields must be PRESENT, correctly TYPED, parity-identical
 # across jq/python3, AND schema-valid. The emitter-parity block compares the whole record, but a field

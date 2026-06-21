@@ -60,10 +60,13 @@ mv "$INDEX" "$dest" || { echo "run-history-maintain: rotation (mv) failed" >&2; 
 : >"$INDEX" 2>/dev/null || true   # start a fresh empty index; the next append continues here
 echo "run-history-maintain: rotated $rows row(s) -> $dest; fresh index at $INDEX"
 
-# Prune: keep only the newest KEEP archives (0 = keep all). Timestamped names sort chronologically.
+# Prune: keep only the newest KEEP archives (0 = keep all). Order by MODIFICATION TIME, not name: a
+# same-second rotation collision names the second file index-<ts>.1.jsonl, which sorts BEFORE the base
+# index-<ts>.jsonl lexicographically — so a name sort would keep the older archive and prune the newer.
 if [ "$KEEP" -gt 0 ]; then
   arcs=()
-  while IFS= read -r f; do arcs+=("$f"); done < <(find "$ARCHIVE_DIR" -maxdepth 1 -type f -name 'index-*.jsonl' 2>/dev/null | sort -r)
+  # shellcheck disable=SC2012 # archive names are controlled (index-*.jsonl, no spaces/newlines); ls -t is portable, find -printf is not
+  while IFS= read -r f; do [ -n "$f" ] && arcs+=("$f"); done < <(ls -t "$ARCHIVE_DIR"/index-*.jsonl 2>/dev/null)
   n=0
   for f in ${arcs[@]+"${arcs[@]}"}; do
     n=$((n + 1))
