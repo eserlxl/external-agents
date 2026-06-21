@@ -613,6 +613,16 @@ else
 fi
 rm -rf "$sl"
 
+# A relative-path target that normalizes into the plugin tree, and a trailing-slash variant, must
+# also be refused: the gate resolves the target via cd + pwd -P, so path-string form cannot fail open.
+rel_parent="$(dirname "$ROOT")"; rel_base="$(basename "$ROOT")"
+rel_err="$( (cd "$rel_parent" && bash "$RUN" --agent codex --target "./$rel_base/scripts" --prompt x) 2>&1 >/dev/null)"; rel_rc=$?
+assert_exit     "relative-path target into the plugin is refused (exit 2)" 2 "$rel_rc"
+assert_contains "relative-path containment is explained"                   "$rel_err" "plugin tree"
+ts_err="$(bash "$RUN" --agent codex --target "$ROOT/scripts/" --prompt x 2>&1 >/dev/null)"; ts_rc=$?
+assert_exit     "trailing-slash target into the plugin is refused (exit 2)" 2 "$ts_rc"
+assert_contains "trailing-slash containment is explained"                   "$ts_err" "plugin tree"
+
 # Write target outside cwd without --yes -> refused before any launch.
 otherdir="$(mktemp -d)"
 bash "$RUN" --agent codex --target "$otherdir" --prompt x >/dev/null 2>&1
