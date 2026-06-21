@@ -111,6 +111,28 @@ else
   bad "enforcement drift: registry enforcement classes match the threat-model matrix" "mismatch:$ecdrift"
 fi
 
+echo "== enforcement-matrix bidirectional coverage (registry agent set == matrix agent set) =="
+# The per-agent drift guard above checks each KNOWN agent's class but iterates a fixed list, so a
+# newly registered agent with no matrix row, or an orphan matrix row for a non-existent agent, would
+# slip past it. Derive BOTH sets dynamically and assert they are equal so neither side can over-claim:
+# every ADAPTER_ENFORCEMENT key must have exactly one matrix row and every matrix row must be a
+# declared agent. Intentionally fails red on either a missing row or an orphan row.
+reg_agents="$(printf '%s' "$ec_reg_line" | grep -oE '\[[a-z][a-z0-9-]*\]=' | sed -E 's/\[([a-z0-9-]+)\]=/\1/' | sort -u)"
+mat_agents="$(awk '
+  /^## Per-CLI read-only enforcement matrix/ {insec=1; next}
+  insec && /^## / {insec=0}
+  insec && /^\|/ {
+    split($0, c, "|"); a=c[2]; gsub(/^[[:space:]]+|[[:space:]]+$/, "", a);
+    if (a ~ /^[a-z][a-z0-9-]*$/ && a != "agent") print a
+  }' "$ROOT/docs/threat-model.md" | sort -u)"
+if [ -n "$reg_agents" ] && [ "$reg_agents" = "$mat_agents" ]; then
+  ok "enforcement bidirectional: registry agent set == threat-model matrix agent set"
+else
+  reg_one="$(printf '%s' "$reg_agents" | tr '\n' ' ')"
+  mat_one="$(printf '%s' "$mat_agents" | tr '\n' ' ')"
+  bad "enforcement bidirectional: registry agent set == threat-model matrix agent set" "reg=[$reg_one] matrix=[$mat_one]"
+fi
+
 echo "== jq / python3 config-backend parity (--list byte-identical) =="
 out_jq="$(bash "$RUN" --list 2>/dev/null)"
 tdir="$(mktemp -d)"
