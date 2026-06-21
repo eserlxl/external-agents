@@ -1110,6 +1110,29 @@ else
   skip "run-record schema drift guard (python3 unavailable)"
 fi
 
+echo "== content-free field-name denylist (no record/schema field may name transcript/prompt/secret content) =="
+# The drift guard above pins the field SET (emitter == schema), but a content-bearing field added to
+# BOTH the emitter and the schema together would keep that guard green while leaking content. This
+# denylist makes the content-free guarantee a red test independent of drift: no meta.json emitter or
+# schema field name may name transcript/prompt/secret/response content. Names only, never values.
+cf_deny='prompt|transcript|response|secret|password|passwd|stdout|stderr|content|free.?text|body'
+cf_emit_names="$(awk '/^write_meta_json\(\) \{/{f=1} f{print} f&&/^\}/{exit}' "$ROOT/scripts/run-agent.sh" | grep -oE '"[a-z_]+":' | tr -d '":' | sort -u)"
+cf_hit="$(printf '%s\n' "$cf_emit_names" | grep -iE "$cf_deny" || true)"
+if command -v python3 >/dev/null 2>&1; then
+  cf_schema_names="$(python3 -c 'import json,sys
+s=json.load(open(sys.argv[1]))
+ks=list(s["definitions"]["record"]["properties"])+list(s["definitions"]["signals"]["properties"])
+print("\n".join(sorted(set(ks))))' "$ROOT/schema/run-record.schema.json" 2>/dev/null)"
+  cf_hit="$cf_hit
+$(printf '%s\n' "$cf_schema_names" | grep -iE "$cf_deny" || true)"
+fi
+cf_hit="$(printf '%s' "$cf_hit" | grep -v '^$' || true)"
+if [ -z "$cf_hit" ]; then
+  ok "content-free denylist: no meta.json/schema field name carries transcript/prompt/secret content"
+else
+  bad "content-free denylist: no meta.json/schema field name carries transcript/prompt/secret content" "forbidden field(s): $(printf '%s' "$cf_hit" | tr '\n' ' ')"
+fi
+
 echo "== run-record doc <-> schema drift guard (run-record-contract.md fields == schema record+signals+index) =="
 # Mirrors the emitter<->schema guard above: the field-by-field reference in docs/run-record-contract.md
 # must document EXACTLY the schema's documentable leaf fields — record scalars, signals.tokens/cost, and
