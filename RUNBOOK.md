@@ -16,12 +16,13 @@ prompt, or secret (see [docs/run-record-contract.md](docs/run-record-contract.md
 The index grows unbounded with use. Rotation bounds storage **without losing rows**:
 
 - **Thresholds (opt-in, conservative).** Rotation acts only when explicitly invoked
-  (`scripts/run-history-maintain.sh`), and only when a threshold is crossed:
+  (`scripts/run-history-maintain.sh`), and only when the index is **strictly above** a maximum
+  (`> MAX`, not `>= MAX`):
   - `EXTERNAL_AGENTS_INDEX_MAX_BYTES` (default `10485760` = 10 MiB), or
   - `EXTERNAL_AGENTS_INDEX_MAX_ROWS` (default `50000`).
 
-  Below both thresholds, rotation is a no-op. **Nothing rotates automatically during a run** — the
-  driver only ever appends.
+  At or below both thresholds, rotation is a no-op; an **empty or missing index is never rotated**
+  (even with `--force`). **Nothing rotates automatically during a run** — the driver only ever appends.
 - **Archive, don't prune (default).** On rotation the current `index.jsonl` is **archived** (moved to
   `<EXTERNAL_AGENTS_OUT>/archive/index-<UTC>.jsonl`) and a fresh empty index starts. No row is ever
   deleted by default. **Pruning** old archives (by count) is a separate, explicit opt-in via
