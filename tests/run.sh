@@ -1657,6 +1657,38 @@ else
 fi
 rm -rf "$srdir"
 
+echo "== install-smoke helpers (offline unit tests; sourced, no remote, no agent CLI) =="
+# install-smoke.sh is sourceable so its release-verification helpers can be unit-tested offline,
+# mirroring the live-smoke helper tests above. No agent CLI is launched (--version prints the version,
+# --check is a presence preflight) and the clone is a LOCAL clone of $ROOT — fully offline.
+# shellcheck source=/dev/null  # dynamic absolute-path source, not followed by shellcheck
+. "$ROOT/tests/install-smoke.sh"
+if command -v git >/dev/null 2>&1; then
+  is_iv="$(installed_version "$ROOT")"
+  case "$is_iv" in
+    [0-9]*.[0-9]*.[0-9]*) ok "install-smoke: installed_version lifts a semver from --version ($is_iv)";;
+    *)                    bad "install-smoke: installed_version lifts a semver from --version" "got '$is_iv'";;
+  esac
+  is_nt="$(newest_tag)"
+  if [ -n "$is_nt" ]; then
+    is_pt="$(previous_tag)"
+    if [ -z "$is_pt" ] || [ "$(printf '%s\n%s\n' "$is_pt" "$is_nt" | sort -V | tail -1)" = "$is_nt" ]; then
+      ok "install-smoke: newest_tag orders >= previous_tag by version ($is_pt <= $is_nt)"
+    else
+      bad "install-smoke: newest_tag orders >= previous_tag by version" "newest=$is_nt previous=$is_pt"
+    fi
+    is_co="$(mktemp -d)"
+    is_vout="$(clone_at_tag "$is_nt" "$is_co/co" && verify_install "$is_co/co" 2>&1)"; is_vrc=$?
+    assert_exit     "install-smoke: verify_install passes on a local clone at $is_nt (offline)" 0 "$is_vrc"
+    assert_contains "install-smoke: verify_install ran the --check presence preflight"          "$is_vout" "presence preflight"
+    rm -rf "$is_co"
+  else
+    skip "install-smoke: tag helpers (no vX.Y.Z tag in this checkout)"
+  fi
+else
+  skip "install-smoke: helper unit tests (git unavailable)"
+fi
+
 echo "== agy quota-schema evidence is sanitised (keys/types only, no value/account-id) =="
 # quota_probe writes $LIVE_OUT/agy-quota-schema.txt as a content-free drift detector for the keys
 # agy_model_status reads — key NAMES, types, and array item-key NAMES only, NEVER a percentage value

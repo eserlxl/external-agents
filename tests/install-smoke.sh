@@ -48,7 +48,7 @@ clone_at_tag() {
 # verify_install CHECKOUT — assert the loaded plugin's driver answers --check (presence verdict,
 # never an auth call) and --version (a version string). Returns non-zero on failure.
 verify_install() {
-  local co="$1" rc=0 ver
+  local co="$1" rc=0 ver chk
   if [ -x "$co/scripts/run-agent.sh" ]; then
     echo "install smoke: driver present in the checkout"
   else
@@ -57,7 +57,10 @@ verify_install() {
   fi
   # --check is a presence preflight (its exit code reflects missing CLIs); require only that it
   # RUNS and prints its preflight header — not that every agent CLI is installed (that is readiness).
-  if bash "$co/scripts/run-agent.sh" --check 2>&1 | grep -q "external-agents preflight:"; then
+  # Capture first, then grep: piping --check straight into grep would, under `set -o pipefail`,
+  # surface --check's own non-zero exit (missing CLIs) and mask a matched header (false FAIL).
+  chk="$(bash "$co/scripts/run-agent.sh" --check 2>&1)"
+  if printf '%s\n' "$chk" | grep -q "external-agents preflight:"; then
     echo "install smoke: --check ran (presence preflight, no auth call)"
   else
     echo "install smoke: FAIL --check did not run" >&2
