@@ -85,6 +85,29 @@ Every artifact in this flow — the index, the per-run records, and the archives
 **only control-plane facts**, never a transcript, prompt, or secret. The offline suite asserts the
 rotation / recoverability invariants and the secret-free guarantee.
 
+## Live-smoke & e2e evidence
+
+The opt-in [live smoke](README.md#live-smoke-opt-in) and [e2e recipes](docs/e2e-recipe.md) write their
+evidence **outside the repository**, under `EXTERNAL_AGENTS_OUT` (default `$HOME/.external-agents/logs`)
+— never a tracked file:
+
+- **Live smoke:** `<EXTERNAL_AGENTS_OUT>/live-smoke/status.txt` (one `<agent>  <status>` line) plus
+  `provenance.txt`. The status vocabulary is `live-verified`, `failed`, `skipped-not-reachable`,
+  `skipped-scoped-out`, and `skipped-not-opted-in` (the harness was not armed). Only `live-verified`
+  means the agent round-tripped at record time.
+- **E2E recipes:** `<EXTERNAL_AGENTS_OUT>/e2e/<recipe>/<agent>/` — per-run `argv`, `pre.sha`,
+  `pre.status`, and the redacted response.
+
+Read the live-smoke result with:
+
+```bash
+cat "${EXTERNAL_AGENTS_OUT:-$HOME/.external-agents/logs}"/live-smoke/status.txt
+```
+
+These records are **best-effort, human-auditable, and never committed to the repo**; the required
+offline gate never produces them. See the README [live smoke](README.md#live-smoke-opt-in) section for
+the full vocabulary and record-stability contract.
+
 ## Phase 8 resilience readiness
 
 What the run-history surface now guarantees, and the honest limits:
