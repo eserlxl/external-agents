@@ -250,6 +250,9 @@ echo "== per-agent jq/python3 dry-run parity (model/effort/fallback ops under bo
 pdir="$(mktemp -d)"; mk_restricted_bin "$pdir"
 parity_dry() {  # agent  effort  [extra env assignment]
   local a="$1" e="$2" env="${3:-}" oj op
+  # Without jq the ambient-PATH "jq" backend silently falls back to python3, making the parity vacuous
+  # (both sides python3). Skip rather than report a false pass — mirroring the other parity blocks.
+  command -v jq >/dev/null 2>&1 || { skip "dry-run parity: $a $e (jq unavailable — both backends would be python3)"; return; }
   oj="$(env ${env:+$env} bash "$RUN" --agent "$a" --read-only --effort "$e" --dry-run --prompt p 2>/dev/null)"
   op="$(env ${env:+$env} PATH="$pdir/bin" "$pdir/bin/bash" "$RUN" --agent "$a" --read-only --effort "$e" --dry-run --prompt p 2>/dev/null)"
   if [ -z "$oj" ] || [ -z "$op" ]; then skip "$a/$e parity (a backend unavailable)"; return; fi
