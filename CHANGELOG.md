@@ -4,6 +4,26 @@ All notable changes to external-agents are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/),
 and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [0.10.0] - 2026-06-21
+
+A feature release adding **read-only cloud API advisors** — additive and
+backward-compatible (every 0.9.0 flag, default, `agents.json` key, and run-record
+field is preserved).
+
+### Added
+- **Cloud API advisors (read-only).** `claude-api`, `openai`, `gemini`, and `openrouter` — direct
+  provider completion endpoints driven by a new stdlib-only `scripts/api-client.py`, for repository
+  analysis (e.g. council/conclave panels). A new `api` agent kind (shared `argv_api` builder plus
+  `ADAPTER_KIND`/`ADAPTER_PROVIDER`/`ADAPTER_KEY_ENV` registry maps) is **always read-only and
+  enforced** (no filesystem access) and ships **disabled by default**; an API-only run auto-selects
+  `--read-only`, and api agents are omitted from `--discover` (not tree-runnable). Tier models mirror
+  the CLI agents.
+- **API key resolution via Unix `pass`.** Each provider's env var (`ANTHROPIC_API_KEY` /
+  `OPENAI_API_KEY` / `GEMINI_API_KEY`→`GOOGLE_API_KEY` / `OPENROUTER_API_KEY`) names a `pass` entry; the
+  key is read via `pass show` at run time and never appears in argv, transcripts, or committed config.
+  `--check` reports the key *source* only and never decrypts. Falls back to a literal key when `pass`
+  is absent or `EXTERNAL_AGENTS_NO_PASS=1`.
+
 ## [0.9.0] - 2026-06-21
 
 A feature release focused on **multi-agent orchestration and registry-driven
