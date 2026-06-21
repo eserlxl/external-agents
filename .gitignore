@@ -2,6 +2,10 @@
 .remember/
 .planwright/
 
+# Python bytecode cache (e.g. tests importing scripts/api-client.py)
+__pycache__/
+*.pyc
+
 # OS / editor cruft
 .DS_Store
 *.swp
