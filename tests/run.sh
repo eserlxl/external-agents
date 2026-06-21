@@ -1548,6 +1548,34 @@ else
 fi
 rm -rf "$pbase"
 
+echo "== run-history rotation threshold boundary (empty/missing no-op; rotate strictly > MAX) =="
+# The rotation oracles above use --force, which BYPASSES the threshold decision. This pins the trigger
+# itself (scripts/run-history-maintain.sh): a missing or empty index is NEVER rotated, and a row/byte
+# threshold rotates strictly ABOVE the maximum (> MAX via -gt), not at or below it. Offline; temp base.
+RHMB="$ROOT/scripts/run-history-maintain.sh"
+tb_arc_count() { find "$1/archive" -name 'index-2*.jsonl' 2>/dev/null | wc -l | tr -d ' '; }
+tb1="$(mktemp -d)"   # (1) missing index -> no-op
+EXTERNAL_AGENTS_INDEX_MAX_ROWS=2 bash "$RHMB" --base "$tb1" >/dev/null 2>&1; tb1_rc=$?
+assert_exit     "threshold: missing index is a no-op (exit 0)" 0 "$tb1_rc"
+assert_contains "threshold: missing index creates no archive" "$(tb_arc_count "$tb1")" "0"
+tb2="$(mktemp -d)"; : >"$tb2/index.jsonl"   # (2) empty index -> never rotated
+EXTERNAL_AGENTS_INDEX_MAX_ROWS=2 bash "$RHMB" --base "$tb2" >/dev/null 2>&1
+assert_contains "threshold: empty index is never rotated (no archive)" "$(tb_arc_count "$tb2")" "0"
+tb3="$(mktemp -d)"; printf '{"rc":0}\n{"rc":0}\n' >"$tb3/index.jsonl"   # (3) rows == MAX -> no rotation
+EXTERNAL_AGENTS_INDEX_MAX_ROWS=2 bash "$RHMB" --base "$tb3" >/dev/null 2>&1
+assert_contains "threshold: rows == MAX does not rotate (strict > boundary)" "$(tb_arc_count "$tb3")" "0"
+tb4="$(mktemp -d)"; printf '{"rc":0}\n{"rc":0}\n{"rc":0}\n' >"$tb4/index.jsonl"   # (4) rows > MAX -> rotate
+EXTERNAL_AGENTS_INDEX_MAX_ROWS=2 bash "$RHMB" --base "$tb4" >/dev/null 2>&1
+tb4_arc="$(find "$tb4/archive" -name 'index-2*.jsonl' 2>/dev/null | sort -r | head -1)"
+tb4_arc_rows="$(wc -l <"$tb4_arc" 2>/dev/null | tr -d ' ')"
+tb4_fresh_rows="$(wc -l <"$tb4/index.jsonl" 2>/dev/null | tr -d ' ')"
+if [ "$tb4_arc_rows" = "3" ] && [ "$tb4_fresh_rows" = "0" ]; then
+  ok "threshold: rows > MAX rotates (3 rows archived, fresh index emptied)"
+else
+  bad "threshold: rows > MAX rotates" "archive=$tb4_arc_rows fresh=$tb4_fresh_rows"
+fi
+rm -rf "$tb1" "$tb2" "$tb3" "$tb4"
+
 echo "== Phase 8 resilience field parity + schema (error_class/attempts/retried; both backends) =="
 # Consolidation: the Phase 8.2 resilience fields must be PRESENT, correctly TYPED, parity-identical
 # across jq/python3, AND schema-valid. The emitter-parity block compares the whole record, but a field
