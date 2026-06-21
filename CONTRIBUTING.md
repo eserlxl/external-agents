@@ -30,6 +30,18 @@ bash tests/run.sh
 The offline suite is **CLI-free** — it exercises `run-agent.sh` only through `--dry-run`, `--list`,
 `--check`, and stubbed runs, so no external agent CLI is launched. Keep it that way (see [Tests](#tests)).
 
+Steps 1–3 above are the **single offline validation entrypoint** and the only checks the required CI
+gate runs. To extend the same loop end-to-end, run the **opt-in** live and end-to-end harnesses — they
+launch real agent CLIs and are deliberately **not** wired into the required CI gate (the offline-boundary
+guard in `tests/run.sh` asserts the required job carries no live harness, so this stays true without a
+manual no-coupling check):
+
+```bash
+# 4. opt-in: live smoke + e2e (real agent CLIs; OFF the required CI gate)
+EXTERNAL_AGENTS_LIVE=1 bash tests/live-smoke.sh
+EXTERNAL_AGENTS_LIVE=1 bash tests/e2e/run-e2e.sh
+```
+
 ## Architecture (where a change belongs)
 
 Three layers, one rule:
