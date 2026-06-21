@@ -76,7 +76,7 @@ fresh fixture, then checks the run succeeded and (for enforced agents) left the 
 - **Driver argv:** the recipe uses `run-agent.sh --read-only`, so each agent resolves to its enforced
   read-only argv — e.g. `codex exec -s read-only -C <fixture> --skip-git-repo-check <PROMPT>`,
   `claude -p <PROMPT> --allowedTools Read Grep Glob`, `cursor-agent -p --mode plan --trust --workspace
-  <fixture> -- <PROMPT>`, `agy -p <PROMPT> --sandbox --add-dir <fixture>`.
+  <fixture> -- <PROMPT>`, `agy -p <PROMPT> --add-dir <fixture> --sandbox`.
 - **Expected transcript:** a non-empty, redacted response with `rc=0` (`bytes>0`). Per-run evidence
   lands under `$EXTERNAL_AGENTS_OUT/e2e/review-readonly/<agent>/`: `argv`, `pre.sha`, `pre.status`,
   `post.status`, `post.diffstat`, `run.txt` (rc/sec/bytes/transcript path), and `driver.err`.
