@@ -232,6 +232,61 @@ else
   skip "api-client.py http_post status->exit mapping (python3 unavailable)"
 fi
 
+echo "== api-client.py response parsing + key-resolution fallbacks (offline; stubbed) =="
+# Pin the cold node's remaining unexecuted logic: per-provider response parsing (text extraction +
+# the refusal/blocked sentinels) and resolve_key's non-`pass` fallbacks. resolve_key + http_post are
+# stubbed for the parsing cases (no network); the resolve_key cases use the literal path
+# (EXTERNAL_AGENTS_NO_PASS=1) so they never invoke `pass` and stay deterministic.
+if command -v python3 >/dev/null 2>&1; then
+  acparse="$(python3 - "$ROOT/scripts/api-client.py" <<'PY'
+import importlib.util, os, sys
+spec = importlib.util.spec_from_file_location("apiclient", sys.argv[1])
+m = importlib.util.module_from_spec(spec); spec.loader.exec_module(m)
+out = []
+def check(desc, got, want):
+    out.append(("PASS " if got == want else "FAIL ") + desc + ("" if got == want else " (got %r want %r)" % (got, want)))
+# (a) response parsing — resolve_key + http_post stubbed, canned payload swapped per case
+orig_resolve_key = m.resolve_key
+m.resolve_key = lambda p: "k"
+canned = {}
+m.http_post = lambda *a, **k: canned
+canned = {"content": [{"type": "text", "text": "hel"}, {"type": "text", "text": "lo"}]}
+check("run_anthropic joins text blocks", m.run_anthropic("md", "", "p", 10, 1), "hello")
+canned = {"stop_reason": "refusal", "stop_details": {"category": "weapons"}}
+check("run_anthropic refusal sentinel", m.run_anthropic("md", "", "p", 10, 1), "[model refused: weapons]")
+canned = {"candidates": [{"content": {"parts": [{"text": "h"}, {"text": "i"}]}}]}
+check("run_gemini joins parts", m.run_gemini("md", "", "p", 10, 1), "hi")
+canned = {"promptFeedback": {"blockReason": "SAFETY"}}
+check("run_gemini blocked sentinel", m.run_gemini("md", "", "p", 10, 1), "[blocked: SAFETY]")
+canned = {"choices": [{"message": {"content": "yo"}}]}
+check("run_openai extracts message.content", m.run_openai("md", "", "p", 10, 1), "yo")
+canned = {"choices": []}
+check("run_openai empty choices -> ''", m.run_openai("md", "", "p", 10, 1), "")
+# (b) resolve_key fallbacks — REAL function, literal path (no `pass`)
+m.resolve_key = orig_resolve_key
+os.environ["EXTERNAL_AGENTS_NO_PASS"] = "1"
+for v in ("ANTHROPIC_API_KEY", "OPENAI_API_KEY", "GEMINI_API_KEY", "GOOGLE_API_KEY", "OPENROUTER_API_KEY"):
+    os.environ.pop(v, None)
+os.environ["OPENAI_API_KEY"] = "literalkey"
+check("resolve_key literal fallback (no pass)", m.resolve_key("openai"), "literalkey")
+os.environ["GOOGLE_API_KEY"] = "gkey"
+check("resolve_key gemini GEMINI->GOOGLE fallback", m.resolve_key("gemini"), "gkey")
+os.environ["GEMINI_API_KEY"] = "gemkey"
+check("resolve_key gemini prefers GEMINI_API_KEY", m.resolve_key("gemini"), "gemkey")
+for r in out:
+    print(r)
+PY
+)"
+  while IFS= read -r line; do
+    case "$line" in
+      "PASS "*) ok "${line#PASS }";;
+      "FAIL "*) bad "${line#FAIL }";;
+    esac
+  done <<< "$acparse"
+else
+  skip "api-client.py response parsing (python3 unavailable)"
+fi
+
 echo "== enforcement-matrix accuracy (docs/threat-model.md vs driver read-only argv) =="
 # For each agent the read-only mechanism the driver actually emits must also be the one the
 # published matrix documents — so docs/threat-model.md cannot silently drift from the driver.
