@@ -1379,6 +1379,25 @@ else
   skip "retry timeout opt-in oracle (timeout/python3 unavailable)"
 fi
 
+echo "== closed-set classification coverage: contract + unknown (the untested classes) =="
+# classify_outcome (scripts/run-agent.sh) maps to a CLOSED set; the failure-injection block above
+# covers ok/safety-refusal/timeout/transient/auth. Pin the remaining two: a malformed agent output ->
+# "contract", and an unclassified non-zero exit -> "unknown". Classification is computed once in shell
+# (backend-independent by construction), so one backend suffices. Offline; no live CLI.
+if command -v timeout >/dev/null 2>&1 && command -v python3 >/dev/null 2>&1; then
+  cc_meta() {  # stub-body -> error_class
+    local body="$1" d od tg; d="$(mktemp -d)"; od="$(mktemp -d)"; tg="$(mktemp -d)"
+    printf '#!/usr/bin/env bash\n%s\n' "$body" >"$d/codex"; chmod +x "$d/codex"
+    PATH="$d:$PATH" EXTERNAL_AGENTS_OUT="$od" bash "$RUN" --agent codex --effort high --read-only --timeout 30 --target "$tg" --prompt x >/dev/null 2>&1
+    python3 -c 'import json,sys; print(json.load(open(sys.argv[1])).get("error_class"))' "$od/$(basename "$tg")/codex.meta.json" 2>/dev/null
+    rm -rf "$d" "$od" "$tg"
+  }
+  assert_contains "classification: malformed agent output -> contract"   "$(cc_meta 'echo "malformed response" >&2; exit 1')" "contract"
+  assert_contains "classification: unclassified non-zero exit -> unknown" "$(cc_meta 'echo "?!?" >&2; exit 7')"            "unknown"
+else
+  skip "closed-set classification coverage (timeout/python3 unavailable)"
+fi
+
 echo "== run-history analytics trends oracle (committed synthetic index; both backends; read-only) =="
 # Aggregate scripts/run-history-report.sh over a COMMITTED synthetic index fixture and assert exact
 # values under jq AND a python3-only PATH: run/ok/fail counts, error_class distribution, fallback
