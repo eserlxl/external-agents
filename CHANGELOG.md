@@ -4,6 +4,11 @@ All notable changes to external-agents are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/),
 and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [0.10.1] - 2026-06-21
+
+### Changed
+- Validate required flag arguments across scripts (a flag missing its value exits 2 instead of hanging or swallowing the next token); add offline api-client.py test coverage (exit codes, HTTP-status mapping, response parsing, key resolution); ignore Python bytecode cache
+
 ## [0.10.0] - 2026-06-21
 
 A feature release adding **read-only cloud API advisors** — additive and

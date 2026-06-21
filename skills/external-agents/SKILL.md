@@ -14,7 +14,7 @@ description: >
 license: GPL-3.0-or-later
 metadata:
   plugin: external-agents
-  version: "0.10.0"
+  version: "0.10.1"
 ---
 
 # external-agents
