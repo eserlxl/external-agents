@@ -33,13 +33,13 @@ A dispatch crosses four boundaries, each less trusted than the last:
 
 | Asset | Threat | Mitigating control (in `scripts/run-agent.sh`) |
 |-------|--------|------------------------------------------------|
-| Plugin tree | A write run targets the plugin itself or a parent that contains it (e.g. a monorepo root exposing sibling repos) | Containment gate refuses a `--target` inside the plugin (`:467`) or containing it (`:468`), after resolving both paths physically with `pwd -P` (`:457-460`) so symlinks cannot slip past |
-| Target tree | A wrong/misremembered non-cwd target is silently written | A write run whose `--target` is not the current directory is refused unless `--yes` is passed (`:470-476`) |
-| Target tree | A read-only intent silently degrades into a write run | `--read-only` and `--write` are mutually exclusive and rejected in either order (`:140`, `:143`) |
-| Target tree | A read-only run is mistaken for an enforced guarantee on agy | agy `--sandbox` is best-effort; the driver prints a NOTE that it may still permit writes and to use codex/claude/cursor for a hard guarantee (`:503`) |
-| Target tree | A write run leaves no way to inspect/revert changes | After a write on a git target the driver prints `git status`/`git diff --stat` (`:638`); on a non-git target it warns there is no baseline (`:507`) |
-| Prompt integrity | The prompt is word-split, globbed, or `eval`'d (injection) | The prompt is always passed as a single argv element (`:518`, `:541`, `:543`, `:556`) or via stdin, never `eval`'d; the dry-run printer masks it at `PROMPT_IDX` |
-| Scarce model quota | Limited 3rd-party / Opus quota is spent without a check | agy tiers with a `fallback` consult `antigravity-usage --json` and use the primary only when quota is positively confirmed, else the larger-limit Gemini fallback (`:521-532`); `--check` reports whether the quota CLI is present (`:384-387`) |
+| Plugin tree | A write run targets the plugin itself or a parent that contains it (e.g. a monorepo root exposing sibling repos) | Containment gate refuses a `--target` inside the plugin (the `refusing to write inside the plugin tree` guard) or containing it (the `it contains the plugin tree` guard), after resolving both paths physically with `pwd -P` so symlinks cannot slip past |
+| Target tree | A wrong/misremembered non-cwd target is silently written | A write run whose `--target` is not the current directory is refused unless `--yes` is passed (the `non-cwd target needs confirmation` gate) |
+| Target tree | A read-only intent silently degrades into a write run | `--read-only` and `--write` are mutually exclusive and rejected in either order (the `--read-only and --write are mutually exclusive` guard) |
+| Target tree | A read-only run is mistaken for an enforced guarantee on agy | agy `--sandbox` is best-effort; the driver prints a NOTE that it may still permit writes and to use codex/claude/cursor for a hard guarantee (the `agy read-only relies on --sandbox` NOTE) |
+| Target tree | A write run leaves no way to inspect/revert changes | After a write on a git target the driver prints `git status`/`git diff --stat` (the `--no-pager diff --stat` reporter); on a non-git target it warns there is no baseline (the `no baseline to diff or revert` NOTE) |
+| Prompt integrity | The prompt is word-split, globbed, or `eval`'d (injection) | The prompt is always passed as a single argv element (each adapter's `ARGV` builder sets `PROMPT_IDX`) or via stdin, never `eval`'d; the dry-run printer masks it at `PROMPT_IDX` |
+| Scarce model quota | Limited 3rd-party / Opus quota is spent without a check | agy tiers with a `fallback` consult `antigravity-usage --json` and use the primary only when quota is positively confirmed, else the larger-limit Gemini fallback (the `AGY_QUOTA_CMD` gate); `--check` reports whether the quota CLI is present (the `antigravity-usage present` preflight line) |
 | Secrets in transcripts | A secret-shaped token persists to disk or echoes to stdout | Best-effort, length-bounded redaction of transcript content before it is persisted/echoed (see below) |
 | External provider | The target tree is shipped to a third party that should not see it | The caller chooses `--target`; the docs warn never to point external agents at private IP or secrets, and the containment gate keeps the plugin/parent out of scope |
 
@@ -52,13 +52,13 @@ enforcement-class doc-drift guard asserts against the driver's `ADAPTER_ENFORCEM
 
 | agent | read-only mechanism | enforcement | source of truth (`scripts/run-agent.sh`) |
 |-------|---------------------|-------------|------------------------------------------|
-| agy    | `--sandbox` | **best-effort** — restricts the terminal but does not hard-block edit tools, so a read-only run *can* still mutate the tree | `:519` (`--sandbox`); runtime NOTE at `:503` |
-| codex  | `-s read-only` | **enforced** | `:537` |
-| claude | `--allowedTools Read Grep Glob` | **enforced** | `:543` |
-| cursor | `--mode plan` | **enforced** (Cursor's no-edit planning mode) | `:553` |
+| agy    | `--sandbox` | **best-effort** — restricts the terminal but does not hard-block edit tools, so a read-only run *can* still mutate the tree | `ARGV=(agy` builder (`--sandbox`); runtime NOTE `agy read-only relies on --sandbox` |
+| codex  | `-s read-only` | **enforced** | `ARGV=(codex` builder (`-s read-only`) |
+| claude | `--allowedTools Read Grep Glob` | **enforced** | `ARGV=(claude` builder |
+| cursor | `--mode plan` | **enforced** (Cursor's no-edit planning mode) | `ARGV=(cursor-agent` builder |
 
 For a hard read-only guarantee, fan out to codex/claude/cursor only, or point `--target` at a
-throwaway copy; the driver prints the best-effort NOTE (`:503`) whenever agy runs read-only.
+throwaway copy; the driver prints the best-effort NOTE (`agy read-only relies on --sandbox`) whenever agy runs read-only.
 
 ## Secret handling and transcript redaction
 
