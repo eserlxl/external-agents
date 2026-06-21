@@ -37,10 +37,10 @@ F_AGENT=""; F_PROJECT=""; F_SINCE=""; F_UNTIL=""
 while [ $# -gt 0 ]; do
   case "$1" in
     --json) WANT_JSON=1; shift;;
-    --agent)   F_AGENT="${2:-}";   shift 2;;
-    --project) F_PROJECT="${2:-}"; shift 2;;
-    --since)   F_SINCE="${2:-}";   shift 2;;
-    --until)   F_UNTIL="${2:-}";   shift 2;;
+    --agent)   [ $# -ge 2 ] || { echo "run-history-report: $1 needs a value" >&2; exit 2; }; F_AGENT="$2";   shift 2;;
+    --project) [ $# -ge 2 ] || { echo "run-history-report: $1 needs a value" >&2; exit 2; }; F_PROJECT="$2"; shift 2;;
+    --since)   [ $# -ge 2 ] || { echo "run-history-report: $1 needs a value" >&2; exit 2; }; F_SINCE="$2";   shift 2;;
+    --until)   [ $# -ge 2 ] || { echo "run-history-report: $1 needs a value" >&2; exit 2; }; F_UNTIL="$2";   shift 2;;
     -h|--help) sed -n '5,25p' "$ROOT/scripts/run-history-report.sh"; exit 0;;
     -*) echo "run-history-report: unknown flag: $1" >&2; exit 2;;
     *)  INDEX="$1"; shift;;

@@ -20,7 +20,7 @@ BASE=""
 while [ $# -gt 0 ]; do
   case "$1" in
     --force) FORCE=1; shift;;
-    --base)  BASE="${2:-}"; shift 2;;
+    --base)  [ $# -ge 2 ] || { echo "run-history-maintain: $1 needs a value" >&2; exit 2; }; BASE="$2"; shift 2;;
     -h|--help) sed -n '5,16p' "$0"; exit 0;;
     *) echo "run-history-maintain: unknown arg: $1" >&2; exit 2;;
   esac

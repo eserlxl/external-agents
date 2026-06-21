@@ -30,8 +30,8 @@ while [ $# -gt 0 ]; do
   case "$1" in
     --continue) CONTINUE=1; shift;;
     --summary-json) SUMMARY_JSON=1; shift;;
-    --pipeline) PIPELINE="${2:-}"; shift 2;;
-    --prompt)   PROMPT="${2:-}"; shift 2;;
+    --pipeline) [ $# -ge 2 ] || { echo "run-pipeline: $1 needs a value" >&2; exit 2; }; PIPELINE="$2"; shift 2;;
+    --prompt)   [ $# -ge 2 ] || { echo "run-pipeline: $1 needs a value" >&2; exit 2; }; PROMPT="$2"; shift 2;;
     -h|--help)  sed -n '5,18p' "$0"; exit 0;;
     *) PASS+=("$1"); shift;;
   esac
