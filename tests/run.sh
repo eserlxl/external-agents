@@ -1358,6 +1358,27 @@ else
   skip "failure-injection oracles (timeout/python3 unavailable)"
 fi
 
+echo "== retry timeout opt-in (timeout retried ONLY with EXTERNAL_AGENTS_RETRY_ON_TIMEOUT=1) =="
+# The failure-injection block above classifies a timeout but never exercises the opt-in retry gate.
+# Per scripts/run-agent.sh the retryable set is { transient (always), timeout (opt-in) }: a timeout is
+# retried ONLY when EXTERNAL_AGENTS_RETRY_ON_TIMEOUT=1, even with RETRY_MAX>0. Pin both arms offline.
+if command -v timeout >/dev/null 2>&1 && command -v python3 >/dev/null 2>&1; then
+  tostub="$(mktemp -d)"
+  printf '#!/usr/bin/env bash\nsleep 5\n' >"$tostub/codex"; chmod +x "$tostub/codex"
+  to_meta() {  # ron_to-value -> "<class> <attempts> <retried>"
+    local ron="$1" od tg; od="$(mktemp -d)"; tg="$(mktemp -d)"
+    PATH="$tostub:$PATH" EXTERNAL_AGENTS_OUT="$od" EXTERNAL_AGENTS_RETRY_MAX=2 EXTERNAL_AGENTS_RETRY_BACKOFF=0 EXTERNAL_AGENTS_RETRY_ON_TIMEOUT="$ron" \
+      bash "$RUN" --agent codex --effort high --read-only --timeout 1 --target "$tg" --prompt x >/dev/null 2>&1
+    python3 -c 'import json,sys; d=json.load(open(sys.argv[1])); print(d.get("error_class"), d.get("attempts"), d.get("retried"))' "$od/$(basename "$tg")/codex.meta.json" 2>/dev/null
+    rm -rf "$od" "$tg"
+  }
+  assert_contains "retry timeout: NOT retried without opt-in (RETRY_MAX=2, off -> 1 attempt)" "$(to_meta 0)" "timeout 1 False"
+  assert_contains "retry timeout: retried WITH opt-in (RETRY_ON_TIMEOUT=1 -> attempts 3)"     "$(to_meta 1)" "timeout 3 True"
+  rm -rf "$tostub"
+else
+  skip "retry timeout opt-in oracle (timeout/python3 unavailable)"
+fi
+
 echo "== run-history analytics trends oracle (committed synthetic index; both backends; read-only) =="
 # Aggregate scripts/run-history-report.sh over a COMMITTED synthetic index fixture and assert exact
 # values under jq AND a python3-only PATH: run/ok/fail counts, error_class distribution, fallback
