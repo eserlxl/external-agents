@@ -560,6 +560,53 @@ else
   skip "pipeline outcome summary content-free oracle (timeout/python3 unavailable)"
 fi
 
+echo "== pipeline --summary-json: additive machine-readable outcome (control-plane only, not forwarded) =="
+# --summary-json adds ONE final JSON line of per-stage control-plane facts (stage/agent/class/rc/sec/
+# bytes) + completed_through/total/rc — never transcript text — and is INTERCEPTED at the pipeline level
+# (NOT forwarded to the per-stage run-agent, which would reject an unknown flag and fail every stage).
+if command -v timeout >/dev/null 2>&1 && command -v python3 >/dev/null 2>&1; then
+  sjstub="$(mktemp -d)"
+  printf '#!/usr/bin/env bash\necho "PIPE_TRANSCRIPT_LEAK_MARKER body"\n' >"$sjstub/codex";  chmod +x "$sjstub/codex"
+  printf '#!/usr/bin/env bash\necho "PIPE_TRANSCRIPT_LEAK_MARKER body"\n' >"$sjstub/claude"; chmod +x "$sjstub/claude"
+  sjbase="$(mktemp -d)"; sjtgt="$(mktemp -d)"
+  sj_run() {  # run_id args... -> pipeline stdout (fixed pipeline/prompt/mode/target appended)
+    local rid="$1"; shift
+    PATH="$sjstub:$PATH" EXTERNAL_AGENTS_RUN_ID="$rid" EXTERNAL_AGENTS_OUT="$sjbase" \
+      bash "$ROOT/scripts/run-pipeline.sh" "$@" --pipeline codex,claude --prompt p --read-only --target "$sjtgt" 2>&1
+  }
+  sj_out="$(sj_run sj1 --summary-json)"
+  sj_json="$(printf '%s\n' "$sj_out" | tail -1)"
+  sj_shape="$(printf '%s' "$sj_json" | python3 -c '
+import json, sys
+try:
+    d = json.load(sys.stdin)
+except Exception as e:
+    print("BADJSON", e); raise SystemExit
+need = {"run_id", "out", "total", "completed_through", "rc", "stages"}
+st = d.get("stages", [])
+ok = (need <= set(d) and isinstance(st, list) and len(st) == 2
+      and d["total"] == 2 and d["completed_through"] == 2
+      and all({"stage", "agent", "class", "rc", "sec", "bytes"} <= set(s) for s in st)
+      and st[0]["agent"] == "codex" and st[0]["stage"] == 1 and st[0]["class"] == "ok"
+      and st[1]["agent"] == "claude" and st[1]["stage"] == 2)
+print("OK" if ok else "FAIL " + json.dumps(d))' 2>&1)"
+  assert_contains "pipeline --summary-json: well-formed doc with per-stage control-plane rows" "$sj_shape" "OK"
+  case "$sj_json" in
+    *PIPE_TRANSCRIPT_LEAK_MARKER*) bad "pipeline --summary-json: carries NO transcript text" "transcript marker leaked into the JSON";;
+    *)                             ok  "pipeline --summary-json: carries NO transcript text";;
+  esac
+  assert_contains "pipeline --summary-json: not forwarded to stages (both ran ok, 2/2)" "$sj_out" "completed-through-stage 2/2"
+  # Additive: without the flag the last line is the human verdict, never a JSON object.
+  sj_plain="$(sj_run sj2 | tail -1)"
+  case "$sj_plain" in
+    '{'*) bad "pipeline --summary-json: absent without the flag (additive)" "a JSON line appeared without --summary-json";;
+    *)    ok  "pipeline --summary-json: absent without the flag (additive)";;
+  esac
+  rm -rf "$sjstub" "$sjbase" "$sjtgt"
+else
+  skip "pipeline --summary-json oracle (timeout/python3 unavailable)"
+fi
+
 echo "== stub-driven consensus oracle (representative panels; deterministic; both backends) =="
 # Run stub panels with controlled per-agent exit codes (pinned to an exact agent set via --conf, so
 # no live CLI can join) and assert the deterministic consensus verdict for each — all-agree, majority,

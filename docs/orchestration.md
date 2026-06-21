@@ -19,11 +19,19 @@ is a single agent from the registry; the same agent may appear more than once.
 Run the pipeline with `scripts/run-pipeline.sh`, which wraps the driver once per stage:
 
 ```
-scripts/run-pipeline.sh --pipeline agy,codex,claude --prompt P [--target DIR] [--read-only|--write] [--continue]
+scripts/run-pipeline.sh --pipeline agy,codex,claude --prompt P [--target DIR] [--read-only|--write] [--continue] [--summary-json]
 ```
 
-Everything except `--pipeline`/`--prompt`/`--continue` is passed straight through to `scripts/run-agent.sh`
-for each stage, so every per-stage safety gate and record described below applies unchanged.
+Everything except `--pipeline`/`--prompt`/`--continue`/`--summary-json` is passed straight through to
+`scripts/run-agent.sh` for each stage, so every per-stage safety gate and record described below applies
+unchanged.
+
+`--summary-json` is **additive and opt-in** (mirroring the driver's `--json`): without it the output is
+unchanged; with it, after the human-readable outcome summary the pipeline prints **one** final JSON line
+of **control-plane facts only** — `{run_id, out, total, completed_through, rc, stages:[{stage, agent,
+class, rc, sec, bytes}, …]}` — and never any transcript text. It is intercepted at the pipeline level (it
+is *not* forwarded to the per-stage `run-agent.sh`), so a harness can consume the pipeline verdict without
+walking the per-stage record dirs.
 
 ### Per-stage prompt seeding
 

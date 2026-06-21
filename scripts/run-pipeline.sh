@@ -14,6 +14,7 @@
 #                         [--continue] [other run-agent args...]
 #   --pipeline a,b,c   comma-separated ordered agent list (the run order)
 #   --continue         run every stage even if one fails (default: stop at the first failed stage)
+#   --summary-json     also print one final JSON line: per-stage control-plane facts + completed/total
 #   everything else is passed through to scripts/run-agent.sh per stage
 set -uo pipefail
 
@@ -23,10 +24,12 @@ RUN="$ROOT/scripts/run-agent.sh"
 CONTINUE=0
 PIPELINE=""
 PROMPT=""
-PASS=()   # everything except --pipeline/--prompt/--continue is passed through to run-agent.sh per stage
+SUMMARY_JSON=0
+PASS=()   # everything except --pipeline/--prompt/--continue/--summary-json is passed through to run-agent.sh per stage
 while [ $# -gt 0 ]; do
   case "$1" in
     --continue) CONTINUE=1; shift;;
+    --summary-json) SUMMARY_JSON=1; shift;;
     --pipeline) PIPELINE="${2:-}"; shift 2;;
     --prompt)   PROMPT="${2:-}"; shift 2;;
     -h|--help)  sed -n '5,18p' "$0"; exit 0;;
@@ -48,6 +51,7 @@ stage_no=0
 completed=0
 rc_final=0
 SUMMARY=()   # one content-free line per stage (agent/class/rc/sec/bytes) — never any transcript text
+JROWS=()     # parallel structured per-stage rows (stage|agent|class|rc|sec|bytes) for --summary-json
 for ag in ${stages[@]+"${stages[@]}"}; do
   [ -n "$ag" ] || continue
   stage_no=$((stage_no + 1))
@@ -67,6 +71,7 @@ except Exception:
   IFS='|' read -r ec rc_f sec_f bytes_f <<<"$facts"
   [ "$ec" = "ok" ] && completed=$((completed + 1))
   SUMMARY+=("  stage $stage_no/$total  $ag  class=$ec rc=$rc_f sec=$sec_f bytes=$bytes_f")
+  JROWS+=("$stage_no|$ag|$ec|$rc_f|$sec_f|$bytes_f")
   printf 'run-pipeline: stage %d/%d %s -> %s\n' "$stage_no" "$total" "$ag" "${ec:-rc=$rc}"
   if [ "$ec" != "ok" ]; then
     rc_final=1
@@ -87,4 +92,31 @@ done
 echo "run-pipeline: outcome summary (control-plane only — agent/class/rc/sec/bytes, no transcript text):"
 printf '%s\n' ${SUMMARY[@]+"${SUMMARY[@]}"}
 printf 'run-pipeline: completed-through-stage %d/%d (run_id %s, out %s)\n' "$completed" "$total" "$PIPE_ID" "$PIPE_DIR"
+# Opt-in machine-readable summary (--summary-json): ONE final JSON line of control-plane facts only
+# (per-stage stage/agent/class/rc/sec/bytes + completed_through/total/rc) — never any transcript text.
+# Additive, mirroring run-agent.sh --json: the default output above is byte-identical when the flag is absent.
+if [ "$SUMMARY_JSON" = "1" ]; then
+  if command -v python3 >/dev/null 2>&1; then
+    RID="$PIPE_ID" PDIR="$PIPE_DIR" TOT="$total" DONE="$completed" RCF="$rc_final" \
+      python3 - ${JROWS[@]+"${JROWS[@]}"} <<'PY'
+import json, os, sys
+def num(x):
+    try:
+        return int(x)
+    except (TypeError, ValueError):
+        return None
+stages = []
+for a in sys.argv[1:]:
+    stage, agent, cls, rc, sec, byts = (a.split("|") + [""] * 6)[:6]
+    stages.append({"stage": num(stage), "agent": agent, "class": cls,
+                   "rc": num(rc), "sec": num(sec), "bytes": num(byts)})
+doc = {"run_id": os.environ["RID"], "out": os.environ["PDIR"],
+       "total": int(os.environ["TOT"]), "completed_through": int(os.environ["DONE"]),
+       "rc": int(os.environ["RCF"]), "stages": stages}
+print(json.dumps(doc, separators=(",", ":")))
+PY
+  else
+    echo "run-pipeline: --summary-json needs python3 (not on PATH) — skipped" >&2
+  fi
+fi
 exit "$rc_final"
