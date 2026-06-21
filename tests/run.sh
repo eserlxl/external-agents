@@ -65,6 +65,32 @@ dry "cursor read-only -> composer-2.5"           "composer-2.5"                 
 dry "cursor write -> --force"                    "--force"                       -- --agent cursor --write     --effort medium
 dry "cursor binary is cursor-agent"              "cursor-agent"                  -- --agent cursor --write     --effort medium
 
+echo "== argv prompt placement: the prompt is a single verbatim argv element for EVERY agent =="
+# The injection oracle below proves single-element placement only for codex. Generalize it to all four
+# agents so a future argv_<name> regression that splits, duplicates, or drops the prompt (the prompt is
+# set at PROMPT_IDX by each argv_<name> builder) is caught for agy/claude/cursor too. Recording stub per
+# agent (named at its ADAPTER_BIN), real run (no --dry-run), assert the prompt appears EXACTLY once.
+if command -v timeout >/dev/null 2>&1; then
+  pp_prompt='benign multi word prompt ; echo x ; nomatch-*-glob'
+  pp_check() {  # agent  binary
+    local a="$1" bin="$2" d od tg rec n
+    d="$(mktemp -d)"; od="$(mktemp -d)"; tg="$(mktemp -d)"; rec="$d/argv.txt"
+    # shellcheck disable=SC2016  # the $@/$x below are the literal recording-stub body, not shell expansions here
+    printf '#!/usr/bin/env bash\nfor x in "$@"; do printf "ARG=%%s\\n" "$x" >>"%s"; done\n' "$rec" >"$d/$bin"; chmod +x "$d/$bin"
+    PATH="$d:$PATH" EXTERNAL_AGENTS_OUT="$od" bash "$RUN" --agent "$a" --read-only --effort medium --target "$tg" --prompt "$pp_prompt" >/dev/null 2>&1
+    n="$(grep -cFx -- "ARG=$pp_prompt" "$rec" 2>/dev/null)"; [ -n "$n" ] || n=0
+    if [ "$n" = "1" ]; then ok "argv placement: $a passes the prompt as exactly one verbatim argv element"
+    else bad "argv placement: $a passes the prompt as exactly one verbatim argv element" "found $n matching argv element(s) (expected 1); argv: $(tr '\n' '|' <"$rec" 2>/dev/null)"; fi
+    rm -rf "$d" "$od" "$tg"
+  }
+  pp_check agy agy
+  pp_check codex codex
+  pp_check claude claude
+  pp_check cursor cursor-agent
+else
+  skip "argv prompt-placement oracle (timeout unavailable)"
+fi
+
 echo "== per-agent per-tier model resolution (dry-run resolved model == agents.json tier model) =="
 # Pin tier->model resolution for EVERY agent x tier so a resolver regression (a wrong model for a tier)
 # fails offline. The expectation is read DYNAMICALLY from agents.json so an intentional model bump
