@@ -26,3 +26,14 @@ third-party providers. See [docs/threat-model.md](docs/threat-model.md) for the 
 protected assets, and the driver's mitigating controls. Note in particular that **agy read-only is
 best-effort** and that **transcript redaction is best-effort, not a guarantee** of total secret
 removal.
+
+## Review cadence
+
+The threat model and the per-CLI enforcement matrix are re-reviewed on each feature release and at
+least every six months, whichever comes first, so the posture above cannot silently go stale. Between
+reviews the **enforcement-matrix doc-drift guard** in `tests/run.sh` fails the offline suite if the
+published matrix in [docs/threat-model.md](docs/threat-model.md) diverges from the driver's actual
+read-only argv, keeping the mechanical claims honest.
+
+- **Last reviewed:** 2026-06-21 (v0.9.0)
+- **Next review due:** by 2026-12-21, or at the next feature release — whichever comes first.
