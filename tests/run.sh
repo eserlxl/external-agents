@@ -193,6 +193,45 @@ else
   skip "api-client.py CLI exit-code contract (python3 unavailable)"
 fi
 
+echo "== api-client.py http_post HTTP-status -> exit-code mapping (offline; urlopen stubbed) =="
+# http_post maps a provider's HTTP failure to the exit code that drives run-agent.sh's error taxonomy
+# AND bounded-retry policy: 401/403 -> 4 (auth, NEVER retried), 429/>=500 -> 5 (transient, retryable),
+# any other status -> 3 (unknown), and a URLError -> 5. Pin that status->class contract by loading the
+# module and stubbing urllib.request.urlopen — no network is ever reached.
+if command -v python3 >/dev/null 2>&1; then
+  httpmap="$(python3 - "$ROOT/scripts/api-client.py" <<'PY'
+import importlib.util, io, sys, urllib.error
+spec = importlib.util.spec_from_file_location("apiclient", sys.argv[1])
+m = importlib.util.module_from_spec(spec); spec.loader.exec_module(m)
+def he(code): return urllib.error.HTTPError("https://x", code, "msg", {}, io.BytesIO(b"detail"))
+cases = [
+    ("http_post: HTTP 401 -> exit 4 (auth)",      he(401), 4),
+    ("http_post: HTTP 403 -> exit 4 (auth)",      he(403), 4),
+    ("http_post: HTTP 429 -> exit 5 (transient)", he(429), 5),
+    ("http_post: HTTP 500 -> exit 5 (transient)", he(500), 5),
+    ("http_post: HTTP 418 -> exit 3 (unknown)",   he(418), 3),
+    ("http_post: URLError -> exit 5 (transient)", urllib.error.URLError("down"), 5),
+]
+for desc, exc, want in cases:
+    m.urllib.request.urlopen = (lambda e: (lambda *a, **k: (_ for _ in ()).throw(e)))(exc)
+    try:
+        m.http_post("https://example.invalid", {"content-type": "application/json"}, {"x": 1}, 1)
+        got = 0
+    except SystemExit as e:
+        got = e.code
+    print(("PASS " if got == want else "FAIL ") + desc + ("" if got == want else " (got %r want %r)" % (got, want)))
+PY
+)"
+  while IFS= read -r line; do
+    case "$line" in
+      "PASS "*) ok "${line#PASS }";;
+      "FAIL "*) bad "${line#FAIL }";;
+    esac
+  done <<< "$httpmap"
+else
+  skip "api-client.py http_post status->exit mapping (python3 unavailable)"
+fi
+
 echo "== enforcement-matrix accuracy (docs/threat-model.md vs driver read-only argv) =="
 # For each agent the read-only mechanism the driver actually emits must also be the one the
 # published matrix documents — so docs/threat-model.md cannot silently drift from the driver.
