@@ -187,7 +187,7 @@ To reproduce the full Phase 3 evidence for one agent `<a>`:
    EXTERNAL_AGENTS_LIVE=1 bash tests/e2e/run-e2e.sh
    ```
 3. Inspect the per-recipe evidence under `$EXTERNAL_AGENTS_OUT/e2e/<recipe>/<a>/` — each carries
-   `argv` (masked launch argv), `run.txt` (rc/sec/bytes/transcript path), and `driver.err`. The
+   `argv` (masked launch argv), `run.txt` (rc/sec/bytes/transcript path), `driver.err`, and — for the write recipes — `driver.out` (the captured driver stdout; the read-only recipe sends stdout to `/dev/null`, so it carries only `driver.err`). The
    expected per-recipe outcome:
 
    | recipe | expected evidence |
