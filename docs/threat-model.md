@@ -45,10 +45,12 @@ A dispatch crosses four boundaries, each less trusted than the last:
 
 ## Per-CLI read-only enforcement matrix
 
-`--read-only` is enforced unevenly across CLIs. This matrix is the published source of truth that
+`--read-only` is enforced unevenly across agents. This matrix is the published source of truth that
 Phase 6.4's accuracy test asserts against the driver's resolved read-only argv, and that the Phase 9.2
 enforcement-class doc-drift guard asserts against the driver's `ADAPTER_ENFORCEMENT` registry field
-(the **enforcement** column below) — so the matrix, the argv, and the registry cannot drift apart:
+(the **enforcement** column below) — so the matrix, the argv, and the registry cannot drift apart. The
+**api** agents (claude-api/openai/gemini/openrouter) are cloud completion endpoints with no filesystem
+access, so their read-only guarantee is intrinsic and hard — there is no write mode to enforce:
 
 | agent | read-only mechanism | enforcement | source of truth (`scripts/run-agent.sh`) |
 |-------|---------------------|-------------|------------------------------------------|
@@ -56,9 +58,16 @@ enforcement-class doc-drift guard asserts against the driver's `ADAPTER_ENFORCEM
 | codex  | `-s read-only` | **enforced** | `ARGV=(codex` builder (`-s read-only`) |
 | claude | `--allowedTools Read Grep Glob` | **enforced** | `ARGV=(claude` builder |
 | cursor | `--mode plan` | **enforced** (Cursor's no-edit planning mode) | `ARGV=(cursor-agent` builder |
+| claude-api | n/a — stateless completion call (no filesystem access) | **enforced** (a cloud API advisor cannot read or write the tree) | `argv_api` builder via `scripts/api-client.py` |
+| openai | n/a — stateless completion call (no filesystem access) | **enforced** (a cloud API advisor cannot read or write the tree) | `argv_api` builder via `scripts/api-client.py` |
+| gemini | n/a — stateless completion call (no filesystem access) | **enforced** (a cloud API advisor cannot read or write the tree) | `argv_api` builder via `scripts/api-client.py` |
+| openrouter | n/a — stateless completion call (no filesystem access) | **enforced** (a cloud API advisor cannot read or write the tree) | `argv_api` builder via `scripts/api-client.py` |
 
-For a hard read-only guarantee, fan out to codex/claude/cursor only, or point `--target` at a
-throwaway copy; the driver prints the best-effort NOTE (`agy read-only relies on --sandbox`) whenever agy runs read-only.
+For a hard read-only guarantee, fan out to codex/claude/cursor or any api advisor, or point `--target`
+at a throwaway copy; the driver prints the best-effort NOTE (`agy read-only relies on --sandbox`)
+whenever agy runs read-only. API advisors additionally never touch the network with the working tree —
+they send only the prompt the caller assembled. A separate **API key custody** note (keys resolve via
+Unix `pass`; never in argv, transcripts, or committed config) is in the Secret handling section below.
 
 ## Secret handling and transcript redaction
 
@@ -77,6 +86,24 @@ tokens, `KEY=`/`TOKEN=`/`SECRET=`/`PASSWORD=` assignments, and long high-entropy
 
 So transcripts must still be treated as sensitive. The matching user-facing note is the README
 [Safety → Transcript redaction](../README.md#safety) bullet.
+
+### API key custody (api advisors)
+
+The api advisors (claude-api/openai/gemini/openrouter) authenticate with a provider key, resolved by
+`scripts/api-client.py` at run time. Custody is deliberately narrow:
+
+- The provider env var (`ANTHROPIC_API_KEY` / `OPENAI_API_KEY` / `GEMINI_API_KEY`→`GOOGLE_API_KEY` /
+  `OPENROUTER_API_KEY`) holds a **`pass` entry name**, not the raw secret — when `pass` is on `PATH`
+  the key is read via `pass show` and stays GPG-encrypted at rest. It is treated as a literal key only
+  when `pass` is absent (e.g. CI) or `EXTERNAL_AGENTS_NO_PASS=1` is set.
+- The resolved key is sent **only** in the request header — never placed in argv (the masked `*.argv`
+  record carries the entry name at most, never the secret), never written to a transcript or run record,
+  never committed.
+- `--check` reports only whether a key source is *configured* (env var set, `pass` present); it **never**
+  runs `pass show`, so the offline preflight never decrypts a secret or triggers a gpg prompt.
+- The advisor sends only the prompt the caller assembled — it has no filesystem access and never ships
+  the working tree. (A caller that embeds repo context into the prompt is still shipping that context to
+  the provider; treat the prompt as you would any external-provider input.)
 
 ## Run records are content-free
 

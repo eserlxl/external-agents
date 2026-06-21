@@ -118,6 +118,61 @@ else
   skip "per-tier model resolution (jq unavailable)"
 fi
 
+echo "== cloud API advisor agents (read-only; argv via scripts/api-client.py; no network) =="
+# The api-kind agents (claude-api/openai/gemini/openrouter) are READ-ONLY cloud advisors driven by the
+# bundled stdlib client. Pin their --dry-run argv shape + provider/model resolution, the all-api
+# read-only auto-mode, write-mode argv invariance, --check/--discover presence, jq/python3 parity, and
+# that a MISSING key is classified `auth` BEFORE any network call. Nothing here reaches the network.
+dry "claude-api -> bundled client"              "scripts/api-client.py"                 -- --agent claude-api --read-only --effort high
+dry "claude-api -> --provider anthropic"        "--provider anthropic"                  -- --agent claude-api --read-only --effort high
+dry "claude-api high -> opus model + effort"    "--model claude-opus-4-8 --effort high" -- --agent claude-api --read-only --effort high
+dry "openai -> --provider openai"               "--provider openai"                     -- --agent openai     --read-only --effort medium
+dry "gemini -> --provider gemini (no effort)"   "--provider gemini --model gemini-3.1-pro --prompt" -- --agent gemini --read-only --effort high
+dry "openrouter -> --provider openrouter slug"  "--provider openrouter --model anthropic/claude-sonnet-4-6" -- --agent openrouter --read-only --effort medium
+# An API-only run with NO mode flag defaults to read-only (the write gates can't apply to an API call).
+api_ro="$(bash "$RUN" --dry-run --agent claude-api --effort medium --prompt x 2>/dev/null)"
+assert_contains "api-only run defaults to read-only mode" "$api_ro" "mode=readonly"
+# An api agent's argv is mode-agnostic: identical under an explicit --write (still the read-only client).
+api_wr="$(bash "$RUN" --dry-run --agent claude-api --write --effort high --prompt x 2>/dev/null)"
+assert_contains "api agent argv is identical under --write" "$api_wr" "--provider anthropic --model claude-opus-4-8 --effort high"
+# --discover scopes the tree-running live-smoke/e2e harnesses to CLIs, so api advisors are OMITTED from
+# it (they have no filesystem access; a live call is a real API request). They stay visible via --check.
+api_disc="$(bash "$RUN" --discover 2>/dev/null)"
+for a in claude-api openai gemini openrouter; do
+  if printf '%s\n' "$api_disc" | grep -q "^$a "; then bad "discover omits api advisor '$a'" "api agent appeared in --discover"; else ok "discover omits api advisor '$a'"; fi
+done
+if command -v python3 >/dev/null 2>&1; then
+  # --check reports the api key SOURCE (info-only) and never decrypts (no `pass show`, no gpg prompt).
+  api_chk="$(bash "$RUN" --check --agent claude-api 2>/dev/null || true)"
+  assert_contains "check reports claude-api key env (info-only)" "$api_chk" "ANTHROPIC_API_KEY"
+fi
+# jq vs python3 config-backend parity for an api agent's resolved argv (force python3 via a jq-less PATH).
+if command -v jq >/dev/null 2>&1; then
+  apr="$(mktemp -d)"; mk_restricted_bin "$apr"
+  for e in low medium high xhigh; do
+    apj="$(bash "$RUN" --dry-run --agent claude-api --read-only --effort "$e" --prompt x 2>/dev/null | sed -nE 's/^  claude-api +//p')"
+    app="$(PATH="$apr/bin" bash "$RUN" --dry-run --agent claude-api --read-only --effort "$e" --prompt x 2>/dev/null | sed -nE 's/^  claude-api +//p')"
+    if [ -n "$apj" ] && [ "$apj" = "$app" ]; then ok "api parity: claude-api/$e (jq == python3)"; else bad "api parity: claude-api/$e" "jq=[$apj] py=[$app]"; fi
+  done
+  rm -rf "$apr"
+else
+  skip "api dry-run parity (jq unavailable — both backends would be python3)"
+fi
+# A missing-key api run fails at key resolution BEFORE any network call; the driver classifies the
+# auth-shaped stderr as error_class=auth. Keys are unset + `pass` disabled so this is deterministic and
+# offline even on a machine with real keys exported.
+if command -v python3 >/dev/null 2>&1; then
+  authtg="$(mktemp -d)"; authod="$(mktemp -d)"
+  env -u ANTHROPIC_API_KEY -u OPENAI_API_KEY -u GEMINI_API_KEY -u GOOGLE_API_KEY -u OPENROUTER_API_KEY \
+    EXTERNAL_AGENTS_NO_PASS=1 EXTERNAL_AGENTS_OUT="$authod" \
+    bash "$RUN" --agent claude-api --read-only --effort medium --target "$authtg" --prompt 'x' >/dev/null 2>&1
+  authec="$(python3 -c 'import json,sys;print(json.load(open(sys.argv[1]))["error_class"])' "$authod/$(basename "$authtg")/claude-api.meta.json" 2>/dev/null)"
+  assert_contains "api missing-key run classifies as auth (offline; no network)" "$authec" "auth"
+  rm -rf "$authtg" "$authod"
+else
+  skip "api missing-key auth oracle (python3 unavailable)"
+fi
+
 echo "== enforcement-matrix accuracy (docs/threat-model.md vs driver read-only argv) =="
 # For each agent the read-only mechanism the driver actually emits must also be the one the
 # published matrix documents — so docs/threat-model.md cannot silently drift from the driver.
@@ -147,7 +202,11 @@ echo "== enforcement-class doc-drift guard (registry ADAPTER_ENFORCEMENT == thre
 # registry's class must equal the matrix's enforcement column. Intentionally fails if they disagree.
 ec_reg_line="$(grep -E '^declare -A ADAPTER_ENFORCEMENT=' "$ROOT/scripts/run-agent.sh" | head -1)"
 ecdrift=""
-for a in agy codex claude cursor; do
+# Derive the agent set from the registry line so a newly registered agent (e.g. an api advisor) is
+# auto-covered here, not just by the bidirectional set-equality guard below.
+ec_all="$(printf '%s' "$ec_reg_line" | grep -oE '\[[a-z][a-z0-9-]*\]=' | sed -E 's/\[([a-z0-9-]+)\]=/\1/')"
+# shellcheck disable=SC2086 # ec_all is a whitespace-separated agent list; iterate each.
+for a in $ec_all; do
   reg="$(printf '%s' "$ec_reg_line" | grep -oE "\[$a\]=\"[a-z-]+\"" | sed -E 's/.*="([a-z-]+)"/\1/')"
   mrow="$(grep -E "^\| ${a}[[:space:]]" "$ROOT/docs/threat-model.md" | head -1)"
   mcol="$(printf '%s' "$mrow" | awk -F'|' '{print $4}')"
@@ -193,7 +252,7 @@ echo "== agent-inventory doc-drift guard (README agent set == agents.json) =="
 # (those pin registry<->threat-model, never README). Intentionally fails red on either side's drift.
 inv_json="$(jq -r '.agents | keys[]' "$ROOT/agents.json" 2>/dev/null | sort -u)"
 badge_raw="$(grep -oE 'badge/dispatch-[^)]*\.svg' "$ROOT/README.md" | head -1)"
-badge_agents="$(printf '%s' "$badge_raw" | sed -E 's#badge/dispatch-##; s#-[0-9A-Fa-f]{6}\.svg$##' | sed 's/%20%C2%B7%20/\n/g' | sort -u)"
+badge_agents="$(printf '%s' "$badge_raw" | sed -E 's#badge/dispatch-##; s#-[0-9A-Fa-f]{6}\.svg$##' | sed 's/%20%C2%B7%20/\n/g' | sed 's/--/-/g' | sort -u)"
 if [ -n "$inv_json" ] && [ "$inv_json" = "$badge_agents" ]; then
   ok "agent-inventory: README dispatch badge names exactly the agents.json agent set"
 else
@@ -300,9 +359,9 @@ make_fixture_driver() {
   python3 - "$RUN" "$d/run-agent.sh" <<'PY'
 import sys
 src = open(sys.argv[1]).read()
-src = src.replace("ADAPTER_AGENTS=(agy codex claude cursor)", "ADAPTER_AGENTS=(agy codex claude cursor fixture)")
-src = src.replace('[cursor]="cursor-agent" )', '[cursor]="cursor-agent" [fixture]="fixbin" )')
-src = src.replace('[cursor]="enforced" )', '[cursor]="enforced" [fixture]="enforced" )')
+src = src.replace("ADAPTER_AGENTS=(agy codex claude cursor claude-api openai gemini openrouter)", "ADAPTER_AGENTS=(agy codex claude cursor claude-api openai gemini openrouter fixture)")
+src = src.replace('[openrouter]="python3" )', '[openrouter]="python3" [fixture]="fixbin" )')
+src = src.replace('[openrouter]="enforced" )', '[openrouter]="enforced" [fixture]="enforced" )')
 builder = (
     'argv_fixture() {\n'
     '  local m="$1"\n'
@@ -410,7 +469,7 @@ else
   bad "policy-decoupling: generic policy functions are agent-agnostic" "four-agent literal in:$pd_bad"
 fi
 # The agent-set array literal lives in exactly ONE place — the ADAPTER_AGENTS registry declaration.
-pd_reg="$(grep -cE '^ADAPTER_AGENTS=\(agy codex claude cursor\)' "$pd_src")"
+pd_reg="$(grep -cE '^ADAPTER_AGENTS=\(agy codex claude cursor claude-api openai gemini openrouter\)' "$pd_src")"
 if [ "$pd_reg" = "1" ]; then
   ok "policy-decoupling: the agent-set array literal lives once, in the ADAPTER_AGENTS registry"
 else
@@ -2512,12 +2571,21 @@ rm -rf "$cdir"
 assert_contains "--check prints the preflight header"        "$chk_out" "external-agents preflight:"
 assert_contains "--check probes cursor as the cursor-agent binary" "$chk_out" "need cursor-agent on PATH"
 assert_exit     "--check exits non-zero when agent CLIs are missing" 1 "$chk_rc"
-# Every registry agent must be INDIVIDUALLY reported missing under the restricted PATH (not just cursor),
-# derived from ADAPTER_AGENTS so the candidate set stays registry-only (a new agent is covered for free).
+# Every registry agent is reported per its KIND under the restricted PATH, derived from the registry so
+# a new agent is covered for free. A cli agent's CLI binary is absent -> MISS. An api agent runs on the
+# python3 runtime (which the restricted bin DOES provide) + the bundled client -> present (ok); --check
+# never verifies its key, so a present-but-unconfigured api agent is correct, not missing.
 chk_reg="$(grep -oE '^ADAPTER_AGENTS=\([^)]*\)' "$ROOT/scripts/run-agent.sh" | sed -E 's/^ADAPTER_AGENTS=\(//; s/\)$//')"
+chk_kind_line="$(grep -E '^declare -A ADAPTER_KIND=' "$ROOT/scripts/run-agent.sh" | head -1)"
+# shellcheck disable=SC2086 # chk_reg is a whitespace-separated agent list; iterate each.
 for a in $chk_reg; do
-  if printf '%s\n' "$chk_out" | grep -qE "MISS +$a "; then ok "--check reports '$a' missing under the restricted PATH"
-  else bad "--check reports '$a' missing under the restricted PATH" "no MISS line for agent '$a'"; fi
+  if printf '%s' "$chk_kind_line" | grep -qE "\[$a\]=\"api\""; then
+    if printf '%s\n' "$chk_out" | grep -qE "ok +$a "; then ok "--check reports api agent '$a' present (python3 runtime) under the restricted PATH"
+    else bad "--check reports api agent '$a' present under the restricted PATH" "no ok line for api agent '$a'"; fi
+  else
+    if printf '%s\n' "$chk_out" | grep -qE "MISS +$a "; then ok "--check reports '$a' missing under the restricted PATH"
+    else bad "--check reports '$a' missing under the restricted PATH" "no MISS line for agent '$a'"; fi
+  fi
 done
 # Phase 2.2: the antigravity-usage info line is a `command -v` PATH probe (resolving the same binary as
 # the runtime AGY_QUOTA_CMD), info-only and NON-SPENDING. (a) absent (the restricted run above) reports

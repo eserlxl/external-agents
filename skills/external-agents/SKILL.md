@@ -1,14 +1,16 @@
 ---
 name: external-agents
 description: >
-  Delegate a task to external coding-agent CLIs — agy, codex, and cursor (and optionally
-  claude) — running them as autonomous sub-agents in the working tree, then collect each
-  agent's response. Trigger when the user wants to "ask codex / agy / cursor to ...", "have
-  codex / agy / cursor <do X>", "delegate this to codex / agy / cursor", "run the external
-  agent(s)", "fan this out to agy and codex", "use cursor / composer", "get a second agent
-  to ...", or "have the external agents review / analyze / implement / fix ...". Read-write
-  by default (the agents may edit files); switch to read-only when the user only wants
-  analysis. Drives each cli via scripts/run-agent.sh; never reimplement the driving logic here.
+  Delegate a task to external coding agents — the CLIs agy, codex, and cursor (and optionally
+  claude), plus read-only cloud API advisors (claude-api, openai, gemini, openrouter) — running them
+  as autonomous sub-agents, then collect each agent's response. Trigger when the user wants to "ask
+  codex / agy / cursor / gemini / openai to ...", "have codex / agy / cursor <do X>", "delegate this
+  to codex / agy / cursor", "run the external agent(s)", "fan this out to agy and codex", "use cursor
+  / composer", "ask the API models / claude-api / openrouter to analyze ...", "get a second agent
+  to ...", or "have the external agents review / analyze / implement / fix ...". The CLIs are
+  read-write by default (they may edit files); the cloud API advisors are always read-only (analysis
+  only). Switch to read-only when the user only wants analysis. Drives each agent via
+  scripts/run-agent.sh; never reimplement the driving logic here.
 license: GPL-3.0-or-later
 metadata:
   plugin: external-agents
@@ -32,6 +34,18 @@ result back. The agents are real CLIs already on the machine:
 - **cursor** — Cursor's headless agent CLI (`cursor-agent`), running Cursor's own models (Composer 2.5)
 - **claude** — a nested Claude Code session (available, not in the default `all` set)
 
+Read-only **cloud API advisors** — direct provider endpoints with **no filesystem access** (they
+analyze only the prompt you give them; used for repository-analysis panels). Disabled in `agents.json`
+by default:
+
+- **claude-api** — Anthropic Messages API · **openai** — OpenAI Chat Completions · **gemini** — Google
+  `generateContent` · **openrouter** — OpenAI-compatible gateway to any model.
+
+They are **always read-only** (a stateless API call can't touch the tree); an API-only run defaults to
+`--read-only`. Keys resolve via Unix `pass` from each provider's env var
+(`ANTHROPIC_API_KEY`/`OPENAI_API_KEY`/`GEMINI_API_KEY`→`GOOGLE_API_KEY`/`OPENROUTER_API_KEY`) — see the
+README "Cloud API advisors" section.
+
 You do **not** drive the CLIs by hand. A single deterministic script,
 `scripts/run-agent.sh`, owns every flag, sandbox mode, parallel fan-out, timeout, and
 transcript. Your job is to (1) read the user's intent, (2) resolve four things —
@@ -40,7 +54,7 @@ transcript. Your job is to (1) read the user's intent, (2) resolve four things �
 ## 1. Resolve the agent
 
 - Names an agent ("ask **codex**", "have **agy**", "use **claude**", "use **cursor**" /
-  "use **composer**") → that agent.
+  "use **composer**", "ask **claude-api** / **openai** / **gemini** / **openrouter**") → that agent.
 - "the external agents", "both", "all of them", "fan out", or names two+ agents →
   `all` (every agent enabled in `agents.json`, run in parallel).
 - Unspecified → `all` if the user clearly wants breadth/a panel; otherwise ask which one,

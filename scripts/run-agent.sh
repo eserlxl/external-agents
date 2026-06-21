@@ -114,7 +114,7 @@ Usage:
                [--claude-perm MODE] [--timeout SECS] [--out DIR] [--conf FILE]
                [--list] [--check] [--dry-run] [-h | --help]
 
-  --agent       agy | codex | claude | cursor | all  (all = every agent enabled in agents.json)
+  --agent       cli (read-write): agy|codex|claude|cursor · api (read-only): claude-api|openai|gemini|openrouter · all
   --prompt      the task/prompt (single argv element; never word-split)
   --prompt-file read the prompt from a file, or - for stdin
   --target DIR  directory the agents work in (default: cwd)
@@ -138,6 +138,12 @@ Usage:
 
 SAFETY: in the default --write mode the agents can modify whatever is under --target.
 Never point --target at private IP you would not ship to an external provider.
+
+API advisors (claude-api|openai|gemini|openrouter) are READ-ONLY cloud models driven via
+scripts/api-client.py: they take the prompt (assemble any repo context into it — they cannot
+read the tree) and return text. An API-only run defaults to --read-only. Keys resolve from each
+provider's env var (ANTHROPIC_API_KEY / OPENAI_API_KEY / GEMINI_API_KEY|GOOGLE_API_KEY /
+OPENROUTER_API_KEY) via `pass` — the var names a `pass` entry; see README and scripts/api-client.py.
 EOF
 }
 
@@ -300,9 +306,19 @@ cfg() {
 # class); the thin per-CLI argv builders (argv_<agent>, below) own ONLY the argv shape. The rest of the
 # driver derives its agent set, agent_bin, and the best-effort read-only NOTE from this registry, so
 # adding an agent does not touch policy code. Declared here (before every consumer) on purpose.
-ADAPTER_AGENTS=(agy codex claude cursor)   # the known agent set, in canonical (deterministic) order
-declare -A ADAPTER_BIN=( [agy]="agy" [codex]="codex" [claude]="claude" [cursor]="cursor-agent" )
-declare -A ADAPTER_ENFORCEMENT=( [agy]="best-effort" [codex]="enforced" [claude]="enforced" [cursor]="enforced" )
+#
+# Two KINDS of agent: 'cli' — an external agentic CLI (agy/codex/claude/cursor) that may edit the
+# target tree; and 'api' — a cloud completion endpoint (claude-api/openai/gemini/openrouter) driven
+# READ-ONLY via scripts/api-client.py. An api agent has no filesystem access (a stateless completion
+# call can't touch the tree), so its read-only guarantee is HARD (enforced) and it ignores write mode.
+ADAPTER_AGENTS=(agy codex claude cursor claude-api openai gemini openrouter)   # the known agent set, in canonical (deterministic) order
+declare -A ADAPTER_BIN=( [agy]="agy" [codex]="codex" [claude]="claude" [cursor]="cursor-agent" [claude-api]="python3" [openai]="python3" [gemini]="python3" [openrouter]="python3" )
+declare -A ADAPTER_ENFORCEMENT=( [agy]="best-effort" [codex]="enforced" [claude]="enforced" [cursor]="enforced" [claude-api]="enforced" [openai]="enforced" [gemini]="enforced" [openrouter]="enforced" )
+declare -A ADAPTER_KIND=( [agy]="cli" [codex]="cli" [claude]="cli" [cursor]="cli" [claude-api]="api" [openai]="api" [gemini]="api" [openrouter]="api" )
+# api-kind only: the --provider passed to api-client.py and the env var(s) that name its `pass`
+# entry (the FIRST set one wins; see scripts/api-client.py for the pass/literal key resolution).
+declare -A ADAPTER_PROVIDER=( [claude-api]="anthropic" [openai]="openai" [gemini]="gemini" [openrouter]="openrouter" )
+declare -A ADAPTER_KEY_ENV=( [claude-api]="ANTHROPIC_API_KEY" [openai]="OPENAI_API_KEY" [gemini]="GEMINI_API_KEY GOOGLE_API_KEY" [openrouter]="OPENROUTER_API_KEY" )
 
 # The CLI binary an agent name maps to — derived from the registry (ADAPTER_BIN). Identical to the
 # name for agy/codex/claude; the cursor agent's binary is `cursor-agent` (NOT `cursor`, the IDE). An
@@ -392,12 +408,28 @@ if [ "$CHECK" = "1" ]; then
   for a in "${cand[@]}"; do
     case ",$seen," in *",$a,"*) continue;; esac; seen="$seen,$a"
     bin="$(agent_bin "$a")"
+    if [ "${ADAPTER_KIND[$a]:-cli}" = "api" ]; then
+      # api advisor: present iff its runtime ('python3') AND the bundled client are available. The API
+      # key is a READINESS concern (resolved via `pass` at run time) — --check NEVER decrypts it, so it
+      # only reports, info-only, which env var names the `pass` entry and whether `pass` is on PATH.
+      if command -v "$bin" >/dev/null 2>&1 && [ -f "$PLUGIN_ROOT/scripts/api-client.py" ]; then
+        printf '  ok   %-10s %s + scripts/api-client.py\n' "$a" "$(command -v "$bin")"
+      else
+        printf '  MISS %-10s need %s on PATH + scripts/api-client.py\n' "$a" "$bin"; missing=$((missing + 1))
+      fi
+      keyenv="${ADAPTER_KEY_ENV[$a]}"; keyset="unset"
+      # shellcheck disable=SC2086 # keyenv is a space-separated env-var list; iterate each name.
+      for v in $keyenv; do val="${!v:-}"; [ -n "$val" ] && { keyset="set ($v)"; break; }; done
+      if command -v pass >/dev/null 2>&1; then pnote="pass present (the env value is a pass entry name)"; else pnote="pass absent (the env value is the literal key)"; fi
+      printf '  info %-10s key: %s [%s]; %s\n' "$a" "$keyenv" "$keyset" "$pnote"
+      continue
+    fi
     if command -v "$bin" >/dev/null 2>&1; then
-      printf '  ok   %-7s %s\n' "$a" "$(command -v "$bin")"
+      printf '  ok   %-10s %s\n' "$a" "$(command -v "$bin")"
     elif [ "$bin" != "$a" ]; then
-      printf '  MISS %-7s need %s on PATH\n' "$a" "$bin"; missing=$((missing + 1))
+      printf '  MISS %-10s need %s on PATH\n' "$a" "$bin"; missing=$((missing + 1))
     else
-      printf '  MISS %-7s not on PATH\n' "$a"; missing=$((missing + 1))
+      printf '  MISS %-10s not on PATH\n' "$a"; missing=$((missing + 1))
     fi
   done
   # antigravity-usage powers agy's quota-aware fallback. Optional/info-only: when absent
@@ -429,6 +461,10 @@ if [ "$DISCOVER" = "1" ]; then
   dseen=""
   for a in "${dcand[@]}"; do
     case ",$dseen," in *",$a,"*) continue;; esac; dseen="$dseen,$a"
+    # --discover scopes the live-smoke / e2e harnesses, which RUN an agent against a sandbox tree. api
+    # advisors are not tree-runnable CLIs (no filesystem access; a live call is a real, paid API request),
+    # so they are deliberately OMITTED here — inspect them via --list / --check instead.
+    [ "${ADAPTER_KIND[$a]:-cli}" = "api" ] && continue
     bin="$(agent_bin "$a")"
     if command -v "$bin" >/dev/null 2>&1; then
       printf '%s present %s\n' "$a" "$(command -v "$bin")"
@@ -512,6 +548,14 @@ fi
 TARGET="$(cd "$TARGET" && pwd -P)"
 INVOKED_FROM="$(pwd -P)"
 
+# API advisors are inherently read-only (a stateless completion call can't touch the tree). If EVERY
+# agent in the run is api-kind and the caller didn't explicitly choose a mode, default to read-only so
+# the write-mode gates/warnings (which can't apply to an API call) don't fire on an API-only run.
+if [ -z "$MODE_SET" ] && [ "${#RUN[@]}" -gt 0 ]; then
+  _all_api=1
+  for a in "${RUN[@]}"; do [ "${ADAPTER_KIND[$a]:-cli}" = "api" ] || { _all_api=0; break; }; done
+  [ "$_all_api" = "1" ] && MODE="readonly"
+fi
 # Write-mode safety gates (skipped for --dry-run, which launches nothing).
 if [ "$MODE" = "write" ] && [ "$DRYRUN" = "0" ]; then
   # 1. Keep writing agents out of the plugin's own tree, in BOTH directions:
@@ -565,6 +609,11 @@ INDEX="$INDEX_BASE/index.jsonl"
 if [ "$MODE" = "readonly" ]; then
   for a in "${RUN[@]}"; do [ "${ADAPTER_ENFORCEMENT[$a]:-}" = "best-effort" ] && { echo "run-agent: NOTE — agy read-only relies on --sandbox, which is best-effort and may still permit writes. For a hard guarantee use codex/claude/cursor, or target a throwaway copy." >&2; break; }; done
 fi
+# An explicit --write that includes an api advisor: api agents are read-only regardless (no filesystem
+# access), so the write applies only to the cli agents in the run. Say so once, deterministically.
+if [ "$MODE" = "write" ]; then
+  for a in "${RUN[@]}"; do [ "${ADAPTER_KIND[$a]:-cli}" = "api" ] && { echo "run-agent: NOTE — api advisors are read-only; --write applies only to the cli agents in this run." >&2; break; }; done
+fi
 # A write run with no git baseline has no diff/revert recovery path — warn.
 if [ "$MODE" = "write" ] && [ "$DRYRUN" = "0" ] && [ -z "$TOP" ]; then
   echo "run-agent: NOTE — --target is not a git repo; no baseline to diff or revert after writes. Consider 'git init' or a backup first." >&2
@@ -605,6 +654,19 @@ argv_cursor() {
   [ -n "$m" ] && ARGV+=(--model "$m")
   ARGV+=(-- "$PROMPT"); PROMPT_IDX=$(( ${#ARGV[@]} - 1 ))
 }
+# argv_api AGENT MODEL EFFORT — a cloud API advisor via the bundled stdlib client. API agents are
+# ALWAYS read-only (a stateless completion call has no filesystem access), so MODE is intentionally
+# ignored here. The prompt is the trailing argv element at PROMPT_IDX, exactly like the CLIs, so the
+# masked-argv record and injection-safety guarantees hold uniformly. The API key is NEVER in the argv —
+# api-client.py resolves it (via `pass`) at run time from the provider's env var. One shared builder
+# serves every api provider (the provider name is the only per-agent difference).
+argv_api() {
+  local a="$1" m="$2" e="$3"
+  ARGV=(python3 "$PLUGIN_ROOT/scripts/api-client.py" --provider "${ADAPTER_PROVIDER[$a]}")
+  [ -n "$m" ] && ARGV+=(--model "$m")
+  [ -n "$e" ] && ARGV+=(--effort "$e")
+  ARGV+=(--prompt "$PROMPT"); PROMPT_IDX=$(( ${#ARGV[@]} - 1 ))
+}
 
 # --- build one agent's argv  (model/effort resolved from the tier) ----------------
 build_argv() {  # agent ; sets global ARGV[], RESOLVED_MODEL, FALLBACK_TAKEN, PROMPT_IDX
@@ -627,7 +689,8 @@ build_argv() {  # agent ; sets global ARGV[], RESOLVED_MODEL, FALLBACK_TAKEN, PR
     esac
   fi
   ARGV=()
-  "argv_$a" "$m" "$e"       # dispatch to the thin per-CLI argv builder (byte-identical to pre-9.2)
+  if [ "${ADAPTER_KIND[$a]:-cli}" = "api" ]; then argv_api "$a" "$m" "$e"   # one shared builder for every api provider
+  else "argv_$a" "$m" "$e"; fi       # dispatch to the thin per-CLI argv builder (byte-identical to pre-9.2)
   RESOLVED_MODEL="$m"       # the model actually used (post-fallback for agy); may be empty (cli default)
   return 0
 }

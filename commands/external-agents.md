@@ -1,6 +1,6 @@
 ---
-description: Delegate a task to external coding-agent CLIs (agy / codex / claude / cursor) as autonomous sub-agents and collect their responses. Optional leading agent selector; read-write by default, `read-only` for analysis-only.
-argument-hint: "[agy|codex|claude|cursor|all] [read-only] [low|medium|high|xhigh] <task for the external agent(s)>"
+description: Delegate a task to external agents — CLIs (agy / codex / claude / cursor) or read-only cloud API advisors (claude-api / openai / gemini / openrouter) — as autonomous sub-agents and collect their responses. Optional leading agent selector; read-write by default, `read-only` for analysis-only.
+argument-hint: "[agy|codex|claude|cursor|claude-api|openai|gemini|openrouter|all] [read-only] [low|medium|high|xhigh] <task for the external agent(s)>"
 ---
 
 You are dispatching the **external-agents** skill on behalf of the `/external-agents`
@@ -13,9 +13,10 @@ Raw arguments: `$ARGUMENTS`
 
 Resolve them, then hand off to the skill:
 
-1. **Agent.** If the first token is `agy`, `codex`, `claude`, `cursor`, or `all`, that is the
-   agent; strip it. Otherwise leave the agent unspecified (the skill decides — `all` for a
-   panel, else a single agent).
+1. **Agent.** If the first token is `agy`, `codex`, `claude`, `cursor`, `all`, or a read-only cloud
+   API advisor (`claude-api`, `openai`, `gemini`, `openrouter`), that is the agent; strip it.
+   Otherwise leave the agent unspecified (the skill decides — `all` for a panel, else a single agent).
+   The API advisors are always read-only and ship disabled in `agents.json` (run one by name to use it).
 2. **Mode.** If the next token is `read-only` (or `--read-only` / `readonly`), strip it and
    run the skill in read-only mode. Otherwise the default is read-write (the agents may
    edit files).

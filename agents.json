@@ -1,5 +1,5 @@
 {
-  "_comment": "external-agents config. The caller picks ONE effort level (low|medium|high|xhigh) and each agent's tier maps it to the right (model, native effort). 'enabled' agents run under `--agent all`. With no --effort, default_tier is used. agy and cursor bake the tier into the model name and ignore 'effort'; codex/claude take model + effort separately. The cursor agent's CLI binary is `cursor-agent`; run `cursor-agent models` (once logged in) for its exact --model identifiers. NOTE: cursor tiers deliberately use NON-fast, ZDR-respecting model ids (no `-fast` suffix; gpt-5-mini/composer-2.5/gpt-5.5-high/claude-opus-4-8-thinking-high for low/medium/high/xhigh) — Cursor's own CLI default is a `-fast` variant (e.g. `composer-2.5-fast`) that spends fast/priority requests; keep the plain ids to avoid burning fast requests. Avoid the `claude-fable-5-*` ids (marked NO ZDR). agy tiers may add a 'fallback' model: the (limited) 3rd-party primary (e.g. Claude Opus 4.6 (Thinking)) runs only when `antigravity-usage --json` confirms remaining quota — otherwise (exhausted, or the Antigravity IDE is closed / not logged in) the larger-limit Gemini 'fallback' runs instead. agy-only; needs the Antigravity IDE open or `antigravity-usage login`. Read by scripts/run-agent.sh via jq (preferred) or python3. See README.md.",
+  "_comment": "external-agents config. The caller picks ONE effort level (low|medium|high|xhigh) and each agent's tier maps it to the right (model, native effort). 'enabled' agents run under `--agent all`. With no --effort, default_tier is used. agy and cursor bake the tier into the model name and ignore 'effort'; codex/claude take model + effort separately. The cursor agent's CLI binary is `cursor-agent`; run `cursor-agent models` (once logged in) for its exact --model identifiers. NOTE: cursor tiers deliberately use NON-fast, ZDR-respecting model ids (no `-fast` suffix; gpt-5-mini/composer-2.5/gpt-5.5-high/claude-opus-4-8-thinking-high for low/medium/high/xhigh) — Cursor's own CLI default is a `-fast` variant (e.g. `composer-2.5-fast`) that spends fast/priority requests; keep the plain ids to avoid burning fast requests. Avoid the `claude-fable-5-*` ids (marked NO ZDR). agy tiers may add a 'fallback' model: the (limited) 3rd-party primary (e.g. Claude Opus 4.6 (Thinking)) runs only when `antigravity-usage --json` confirms remaining quota — otherwise (exhausted, or the Antigravity IDE is closed / not logged in) the larger-limit Gemini 'fallback' runs instead. agy-only; needs the Antigravity IDE open or `antigravity-usage login`. Read by scripts/run-agent.sh via jq (preferred) or python3. CLOUD API ADVISORS (claude-api/openai/gemini/openrouter) are READ-ONLY, disabled by default, and driven by scripts/api-client.py; their tier 'model' strings are passed through verbatim to the provider API (edit them to your account's exact ids), and API keys resolve from each provider's env var (ANTHROPIC_API_KEY / OPENAI_API_KEY / GEMINI_API_KEY|GOOGLE_API_KEY / OPENROUTER_API_KEY) via Unix 'pass' (the env var names a pass entry) — no key is ever stored here. See README.md.",
   "default_tier": "medium",
   "agents": {
     "agy": {
@@ -36,6 +36,42 @@
         "medium": { "model": "composer-2.5" },
         "high":   { "model": "gpt-5.5-high" },
         "xhigh":  { "model": "claude-opus-4-8-thinking-high" }
+      }
+    },
+    "claude-api": {
+      "enabled": false,
+      "tiers": {
+        "low":    { "model": "claude-haiku-4-5" },
+        "medium": { "model": "claude-sonnet-4-6" },
+        "high":   { "model": "claude-opus-4-8", "effort": "high" },
+        "xhigh":  { "model": "claude-opus-4-8", "effort": "xhigh" }
+      }
+    },
+    "openai": {
+      "enabled": false,
+      "tiers": {
+        "low":    { "model": "gpt-5.5", "effort": "low" },
+        "medium": { "model": "gpt-5.5", "effort": "medium" },
+        "high":   { "model": "gpt-5.5", "effort": "high" },
+        "xhigh":  { "model": "gpt-5.5", "effort": "xhigh" }
+      }
+    },
+    "gemini": {
+      "enabled": false,
+      "tiers": {
+        "low":    { "model": "gemini-3.5-flash" },
+        "medium": { "model": "gemini-3.5-flash" },
+        "high":   { "model": "gemini-3.1-pro" },
+        "xhigh":  { "model": "gemini-3.1-pro" }
+      }
+    },
+    "openrouter": {
+      "enabled": false,
+      "tiers": {
+        "low":    { "model": "openai/gpt-5-mini" },
+        "medium": { "model": "anthropic/claude-sonnet-4-6" },
+        "high":   { "model": "google/gemini-3.1-pro" },
+        "xhigh":  { "model": "anthropic/claude-opus-4-8" }
       }
     }
   }

@@ -4,7 +4,7 @@
 
 [![CI](https://github.com/eserlxl/external-agents/actions/workflows/ci.yml/badge.svg)](https://github.com/eserlxl/external-agents/actions/workflows/ci.yml)
 [![Claude Code plugin](https://img.shields.io/badge/Claude%20Code-plugin-8A2BE2.svg)](https://docs.claude.com/en/docs/claude-code/overview)
-[![Run external CLIs as sub-agents](https://img.shields.io/badge/dispatch-agy%20%C2%B7%20codex%20%C2%B7%20claude%20%C2%B7%20cursor-0A7BBB.svg)](#what-it-drives)
+[![Run external agents as sub-agents](https://img.shields.io/badge/dispatch-agy%20%C2%B7%20codex%20%C2%B7%20claude%20%C2%B7%20cursor%20%C2%B7%20claude--api%20%C2%B7%20openai%20%C2%B7%20gemini%20%C2%B7%20openrouter-0A7BBB.svg)](#what-it-drives)
 [![version](https://img.shields.io/badge/version-0.9.0-informational.svg)](.claude-plugin/plugin.json)
 [![License: GPL-3.0-or-later](https://img.shields.io/badge/license-GPL--3.0--or--later-blue.svg)](LICENSE)
 
@@ -14,9 +14,14 @@ A Claude Code plugin that runs **external coding-agent CLIs** — `agy`, `codex`
 `cursor` (and optionally `claude`) — as autonomous sub-agents from inside a Claude Code
 session. Hand a task to one external agent or fan one prompt out to all of them in parallel,
 then collect every response inline. The `cursor` agent runs Cursor's own models (Composer 2.5).
+It also drives **read-only cloud API advisors** — `claude-api`, `openai`, `gemini`, and
+`openrouter` — direct provider endpoints used for repository analysis (see
+[Cloud API advisors](#cloud-api-advisors-read-only)).
 
 It is a *delegation* tool: an arbitrary task, your choice of agent, and **read-write by
-default** so the agents can actually do work (use `--read-only` for analysis-only runs).
+default** so the CLI agents can actually do work (use `--read-only` for analysis-only runs).
+The cloud API advisors are **always read-only** — a stateless completion call has no filesystem
+access — and ship **disabled by default**.
 
 ## What it drives
 
@@ -46,6 +51,80 @@ A few CLI caveats worth knowing:
   desktop app. Its read-only mode (`--mode plan`) is **enforced** (analyze/plan, no edits),
   so it is a hard guarantee like codex/claude; write mode uses `--force` to auto-approve
   edits and shell.
+
+## Cloud API advisors (read-only)
+
+Beyond the agentic CLIs, the plugin drives four **cloud API advisors** — direct provider
+completion endpoints, used for repository analysis (e.g. council/conclave-style panels):
+
+| agent | provider / endpoint | API key env var (names a [`pass`](#api-keys-via-pass) entry) |
+|-------|---------------------|--------------------------------------------------------------|
+| `claude-api` | Anthropic Messages API (`/v1/messages`) | `ANTHROPIC_API_KEY` |
+| `openai`     | OpenAI Chat Completions (`/v1/chat/completions`) | `OPENAI_API_KEY` |
+| `gemini`     | Google Generative Language (`:generateContent`) | `GEMINI_API_KEY` (else `GOOGLE_API_KEY`) |
+| `openrouter` | OpenRouter (OpenAI-compatible gateway → any model) | `OPENROUTER_API_KEY` |
+
+These differ from the CLI agents in three ways:
+
+- **Always read-only, hard.** A stateless completion call has **no filesystem access**, so an API
+  advisor can never read or write the target tree. It receives only the prompt you give it — assemble
+  any repo context *into* the prompt (the advisor cannot open files itself). An API-only run defaults
+  to `--read-only`; `--write` is accepted but has no effect on an advisor.
+- **Disabled by default.** They ship `"enabled": false` in [`agents.json`](#configuration--agentsjson)
+  (like the `claude` CLI agent), so `--agent all` does not include them until you opt in. Run a named
+  one directly (`--agent gemini`), or set `"enabled": true` to add it to the fan-out.
+- **Stdlib client, no new deps.** They are driven by a single bundled
+  [`scripts/api-client.py`](scripts/api-client.py) (Python standard library only — `urllib`+`json`),
+  invoked as `python3 scripts/api-client.py --provider <p> --model M [--effort E] --prompt P`.
+
+The per-tier `model` strings in `agents.json` are **passed through verbatim** to the provider API —
+edit them to your account's exact model ids (run the provider's model-list to see what you can use).
+`openrouter` is the escape hatch for "any model": its tier models are `vendor/model` slugs
+(`anthropic/claude-opus-4-8`, `openai/gpt-5-mini`, `google/gemini-3.1-pro`, …), so you can reach a model
+that has no dedicated agent without touching code.
+
+```bash
+# one advisor, read-only (the default for an API-only run)
+bash scripts/run-agent.sh --agent claude-api --effort high --prompt 'Review src/client.py for races; cite line numbers.'
+
+# fan a question out to several advisors + CLIs (enable them in agents.json first), read-only
+bash scripts/run-agent.sh --agent all --read-only --consensus --prompt "$(cat analysis-prompt.txt)"
+
+# preview the exact API call without running it (the key is never shown)
+bash scripts/run-agent.sh --agent gemini --dry-run --prompt '...'
+```
+
+### API keys via `pass`
+
+API keys resolve through the Unix password manager [`pass`](https://www.passwordstore.org/), so the
+secret stays GPG-encrypted at rest — it is **never** stored in `agents.json`, an env var value, the
+argv, or a transcript. The provider's env var holds a **`pass` entry name**, not the raw key:
+
+```bash
+# the value is a pass ENTRY NAME, not the secret:
+export ANTHROPIC_API_KEY=api/anthropic     # -> resolved at run time via `pass show api/anthropic`
+export OPENAI_API_KEY=api/openai
+export GEMINI_API_KEY=api/gemini            # GOOGLE_API_KEY is also accepted
+export OPENROUTER_API_KEY=api/openrouter
+```
+
+Resolution per provider, in order:
+
+1. If `pass` is on `PATH` (and `EXTERNAL_AGENTS_NO_PASS` is unset), the env var's value is treated as a
+   `pass` entry name and the key is read via `pass show <entry>` (first line). The secret therefore
+   never appears in argv — only the entry name, which is not sensitive.
+2. If `pass` is **not** installed (e.g. CI), or `EXTERNAL_AGENTS_NO_PASS=1` is set, the env var's value
+   is used as the **literal key**.
+3. Missing/unresolvable → the run fails fast with an `auth`-classified error **before any network call**.
+
+`pass`/`gpg-agent` must be **unlocked non-interactively** when an advisor runs (the same one-time
+readiness step the CLIs need). The offline `--check` preflight reports only whether a key source is
+*configured* (env var set, `pass` present) — it **never** runs `pass show`, so it never decrypts a
+secret or triggers a gpg prompt. The trust-boundary details are in
+[docs/threat-model.md → API key custody](docs/threat-model.md#api-key-custody-api-advisors).
+
+> **External providers.** Like `agy`/`codex`/`cursor`, the API advisors send your prompt to an external
+> service — never put a secret or private IP into a prompt you fan out to them.
 
 ## Install
 

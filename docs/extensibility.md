@@ -76,3 +76,37 @@ bash tests/run.sh
 
 That's it — no policy edit. `--dry-run --agent <name>` now prints the agent's argv, and
 `--check` / `--discover` report it present once its binary is on `PATH`.
+
+## Two agent kinds: `cli` vs `api`
+
+The registry carries a `ADAPTER_KIND` map alongside the policy data:
+
+| Kind | What it is | Read-only | Driven by |
+|------|------------|-----------|-----------|
+| `cli` | an external agentic CLI (agy/codex/claude/cursor) that may edit the target tree | best-effort (agy) / enforced (others) | the per-CLI `argv_<agent>` builder |
+| `api` | a cloud completion endpoint (claude-api/openai/gemini/openrouter) with no filesystem access | **enforced** (intrinsic — a stateless call can't touch the tree) | the shared `argv_api` builder via `scripts/api-client.py` |
+
+An `api` agent is **always read-only** (its `argv_api` builder ignores `MODE`; an API-only run
+auto-selects `--read-only`), so its `ADAPTER_ENFORCEMENT` class is `enforced` and its threat-model row
+documents "no filesystem access". Two extra registry maps carry the api-only facts: `ADAPTER_PROVIDER`
+(the `--provider` passed to the client) and `ADAPTER_KEY_ENV` (the env var(s) that name its `pass`
+entry). `ADAPTER_BIN` for an api agent is the client runtime (`python3`), so `--check` reports it present when
+the runtime **and** `scripts/api-client.py` exist (plus an info line on the key source); the API key is a
+*readiness* concern resolved at run time (never decrypted by `--check`). `--discover` deliberately
+**omits** api agents — that surface scopes the live-smoke / e2e harnesses, which run an agent against a
+sandbox tree, and an api advisor is neither tree-runnable nor free to live-verify.
+
+**Adding a new api provider** is the same registry-only shape, plus a client case:
+
+1. Registry: add the name to `ADAPTER_AGENTS`, `[name]="python3"` to `ADAPTER_BIN`, `[name]="enforced"`
+   to `ADAPTER_ENFORCEMENT`, `[name]="api"` to `ADAPTER_KIND`, `[name]="<provider>"` to
+   `ADAPTER_PROVIDER`, and `[name]="<KEY_ENV>"` to `ADAPTER_KEY_ENV`. No new `argv_<name>` builder — the
+   shared `argv_api` already dispatches on `ADAPTER_PROVIDER`.
+2. Client: add a `run_<provider>()` to `scripts/api-client.py` (request shape + response parsing) and
+   register it in its `PROVIDERS` map.
+3. `agents.json`: the tier → model block, `"enabled": false`, like any other agent.
+4. Threat-model matrix: an `enforced` row (so the enforcement-class and bidirectional doc-drift guards
+   stay green), then run the offline validation loop above.
+
+For an OpenAI-compatible gateway, prefer reusing the `openrouter` agent (its tier models are
+`vendor/model` slugs) rather than adding a provider — no code change needed.
