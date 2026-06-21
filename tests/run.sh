@@ -2410,6 +2410,13 @@ rm -rf "$cdir"
 assert_contains "--check prints the preflight header"        "$chk_out" "external-agents preflight:"
 assert_contains "--check probes cursor as the cursor-agent binary" "$chk_out" "need cursor-agent on PATH"
 assert_exit     "--check exits non-zero when agent CLIs are missing" 1 "$chk_rc"
+# Every registry agent must be INDIVIDUALLY reported missing under the restricted PATH (not just cursor),
+# derived from ADAPTER_AGENTS so the candidate set stays registry-only (a new agent is covered for free).
+chk_reg="$(grep -oE '^ADAPTER_AGENTS=\([^)]*\)' "$ROOT/scripts/run-agent.sh" | sed -E 's/^ADAPTER_AGENTS=\(//; s/\)$//')"
+for a in $chk_reg; do
+  if printf '%s\n' "$chk_out" | grep -qE "MISS +$a "; then ok "--check reports '$a' missing under the restricted PATH"
+  else bad "--check reports '$a' missing under the restricted PATH" "no MISS line for agent '$a'"; fi
+done
 # Phase 2.2: the antigravity-usage info line is a `command -v` PATH probe (resolving the same binary as
 # the runtime AGY_QUOTA_CMD), info-only and NON-SPENDING. (a) absent (the restricted run above) reports
 # "not on PATH"; (b) present, via a stub that writes a sentinel IF EXECUTED, reports "present" yet the
