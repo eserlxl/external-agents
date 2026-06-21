@@ -277,6 +277,9 @@ rapd="$(mktemp -d)"; mk_restricted_bin "$rapd"   # python3, NO jq -> forces JSON
 ratgt="$(mktemp -d)"
 ra_parity() {  # agent  modeflag
   local a="$1" mf="$2" oj op
+  # Without jq the ambient-PATH backend is python3 too, making the byte-identity check vacuous; skip
+  # rather than report a false pass (the restricted backend below already forces python3).
+  command -v jq >/dev/null 2>&1 || { skip "registry-argv $a $mf parity (jq unavailable — both backends would be python3)"; return; }
   oj="$(bash "$RUN" --agent "$a" "$mf" --yes --effort high --model TESTMODEL --target "$ratgt" --dry-run --prompt p 2>/dev/null)"
   op="$(PATH="$rapd/bin" "$rapd/bin/bash" "$RUN" --agent "$a" "$mf" --yes --effort high --model TESTMODEL --target "$ratgt" --dry-run --prompt p 2>/dev/null)"
   if [ -z "$oj" ] || [ -z "$op" ]; then skip "registry-argv $a $mf parity (a backend produced no argv)"; return; fi
