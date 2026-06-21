@@ -769,16 +769,17 @@ else
   skip "prompt injection oracle (timeout unavailable)"
 fi
 
-echo "== version lockstep (plugin.json == SKILL.md == README badge) =="
+echo "== version lockstep (plugin.json == SKILL.md == README badge == CHANGELOG) =="
 pv="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["version"])' "$ROOT/.claude-plugin/plugin.json")"
 sv="$(grep -oE '^  version: "[^"]+"' "$ROOT/skills/external-agents/SKILL.md" | head -1 | sed -E 's/.*"([^"]+)".*/\1/')"
 rvraw="$(grep -oE 'badge/version-.*-informational' "$ROOT/README.md" | head -1 | sed -E 's#badge/version-(.*)-informational#\1#')"
 # Reverse the shields.io message escaping ('--'->'-', '__'->'_').
 rv="$(printf '%s' "$rvraw" | sed -e 's/--/-/g' -e 's/__/_/g')"
-if [ "$pv" = "$sv" ] && [ "$pv" = "$rv" ]; then
+cv="$(grep -m1 -oE '^## \[[0-9]+\.[0-9]+\.[0-9]+\]' "$ROOT/CHANGELOG.md" | sed -E 's/.*\[([0-9.]+)\].*/\1/')"
+if [ "$pv" = "$sv" ] && [ "$pv" = "$rv" ] && [ "$pv" = "$cv" ]; then
   ok "all version strings agree ($pv)"
 else
-  bad "all version strings agree" "plugin.json=$pv SKILL.md=$sv README=$rv"
+  bad "all version strings agree" "plugin.json=$pv SKILL.md=$sv README=$rv CHANGELOG=$cv"
 fi
 
 out="$(bash "$RUN" --version 2>/dev/null)"
