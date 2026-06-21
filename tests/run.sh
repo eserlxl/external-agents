@@ -179,6 +179,28 @@ for a in $inv_json; do
   else bad "agent-inventory: README documents configured agent '$a'" "configured in agents.json but absent from README"; fi
 done
 
+echo "== extensibility-doc consistency guard (docs/extensibility.md vs registry symbols) =="
+# The add-an-agent walkthrough must reference the REAL registry symbols (a renamed/removed symbol must
+# not leave a stale walkthrough) and frame the registry-only claim as offline-proven (fixture-agent
+# oracle), never live-verified. No enforcement guard pins this doc to the driver.
+EX="$ROOT/docs/extensibility.md"
+ex_sym_ok=1
+if ! { grep -qE '^ADAPTER_AGENTS=\(' "$ROOT/scripts/run-agent.sh" && grep -qF 'ADAPTER_AGENTS' "$EX"; }; then ex_sym_ok=0; fi
+for sym in ADAPTER_BIN ADAPTER_ENFORCEMENT; do
+  if ! { grep -qE "^declare -A $sym=\(" "$ROOT/scripts/run-agent.sh" && grep -qF "$sym" "$EX"; }; then ex_sym_ok=0; fi
+done
+if ! { grep -qE '^argv_cursor\(\)' "$ROOT/scripts/run-agent.sh" && grep -qE 'argv_<agent>|argv_cursor' "$EX"; }; then ex_sym_ok=0; fi
+if [ "$ex_sym_ok" = 1 ]; then
+  ok "extensibility-doc: walkthrough references the real registry symbols (ADAPTER_*/argv_<agent>)"
+else
+  bad "extensibility-doc: walkthrough references the real registry symbols (ADAPTER_*/argv_<agent>)" "doc/registry symbol drift"
+fi
+if grep -qiE 'offline|fixture-agent|policy-decoupling' "$EX" && ! grep -qi 'live-verified' "$EX"; then
+  ok "extensibility-doc: registry-only claim is offline-proven, not live-verified"
+else
+  bad "extensibility-doc: registry-only claim is offline-proven, not live-verified" "doc over-claims live verification"
+fi
+
 echo "== jq / python3 config-backend parity (--list byte-identical) =="
 out_jq="$(bash "$RUN" --list 2>/dev/null)"
 tdir="$(mktemp -d)"
