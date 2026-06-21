@@ -1576,6 +1576,27 @@ else
 fi
 rm -rf "$tb1" "$tb2" "$tb3" "$tb4"
 
+echo "== run-history-maintain containment (repo working tree untouched by any lifecycle op) =="
+# The rotation oracles assert the temp BASE path is outside the repo. This is the stronger, EMPIRICAL
+# containment guard: snapshot the repo's tracked working tree, run maintain (rotate + prune) under a
+# temp base, and assert the tracked tree is unchanged — catching any stray write to a hardcoded repo
+# path that an outside-base path check would miss. Compares git status before/after, so a pre-existing
+# uncommitted edit (e.g. this test file mid-run) is identical on both sides and never a false failure.
+if command -v git >/dev/null 2>&1 && git -C "$ROOT" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+  cbase="$(mktemp -d)"; printf '{"rc":0}\n{"rc":0}\n{"rc":0}\n' >"$cbase/index.jsonl"
+  c_before="$(git -C "$ROOT" status --porcelain --untracked-files=no)"
+  EXTERNAL_AGENTS_INDEX_MAX_ROWS=2 EXTERNAL_AGENTS_ARCHIVE_KEEP=1 bash "$ROOT/scripts/run-history-maintain.sh" --base "$cbase" --force >/dev/null 2>&1
+  c_after="$(git -C "$ROOT" status --porcelain --untracked-files=no)"
+  if [ "$c_before" = "$c_after" ]; then
+    ok "containment: run-history-maintain leaves the repo's tracked working tree unchanged"
+  else
+    bad "containment: run-history-maintain leaves the repo's tracked working tree unchanged" "git status changed during maintain"
+  fi
+  rm -rf "$cbase"
+else
+  skip "run-history-maintain containment guard (git unavailable / not a work tree)"
+fi
+
 echo "== Phase 8 resilience field parity + schema (error_class/attempts/retried; both backends) =="
 # Consolidation: the Phase 8.2 resilience fields must be PRESENT, correctly TYPED, parity-identical
 # across jq/python3, AND schema-valid. The emitter-parity block compares the whole record, but a field
