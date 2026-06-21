@@ -1274,6 +1274,46 @@ else
   skip "run-record doc drift guard (python3 unavailable)"
 fi
 
+echo "== run-record additive-only schema-stability guard (no removed/renamed field, no new required) =="
+# main-planning §5 mandates an ADDITIVE-ONLY run-record contract: new optional fields may be added, but
+# no field may be removed or renamed and no field may become newly required (older rows must stay valid).
+# Pin the schema's structural shape to a committed baseline so a breaking delta fails offline. The other
+# drift guards pin the field SET (emitter/doc equality); this is the ONLY guard on the REQUIRED set and
+# on additive-only deltas. To update the baseline after an intentional ADDITIVE change, add the new leaf
+# field name to ADDITIVE_BASELINE_LEAF below — never remove one, and never add to ADDITIVE_BASELINE_REQUIRED.
+ADDITIVE_BASELINE_LEAF="agent attempts bytes effort error_class fallback mode model project rc retried run_id sec signals.cost signals.tokens target tier timestamp"
+ADDITIVE_BASELINE_REQUIRED="agent bytes cost effort fallback mode model project rc run_id sec signals target tier timestamp tokens"
+if command -v python3 >/dev/null 2>&1; then
+  addsel="$(python3 -c 'import json,sys
+s=json.load(open(sys.argv[1]))
+rec=set(s["definitions"]["record"]["properties"]); sig=set(s["definitions"]["signals"]["properties"])
+allp=set(); req=set()
+def walk(n):
+    if isinstance(n, dict):
+        for k in (n.get("properties") or {}): allp.add(k)
+        for r in (n.get("required") or []): req.add(r)
+        for key in ("allOf","oneOf","anyOf"):
+            for x in n.get(key,[]) or []: walk(x)
+        for x in (n.get("definitions") or {}).values(): walk(x)
+walk(s)
+extra=allp-rec-sig-{"signals"}
+leaf=(rec-{"signals"}) | {"signals."+k for k in sig} | extra
+print(" ".join(sorted(leaf))); print(" ".join(sorted(req)))' "$ROOT/schema/run-record.schema.json" 2>/dev/null)"
+  add_leaf_now="$(printf '%s\n' "$addsel" | sed -n '1p')"
+  add_req_now="$(printf '%s\n' "$addsel" | sed -n '2p')"
+  add_removed=""
+  for f in $ADDITIVE_BASELINE_LEAF; do case " $add_leaf_now " in *" $f "*) : ;; *) add_removed="$add_removed $f";; esac; done
+  add_newreq=""
+  for f in $add_req_now; do case " $ADDITIVE_BASELINE_REQUIRED " in *" $f "*) : ;; *) add_newreq="$add_newreq $f";; esac; done
+  if [ -z "$add_removed" ] && [ -z "$add_newreq" ]; then
+    ok "additive-only: no run-record field removed/renamed and no field newly required vs the committed baseline"
+  else
+    bad "additive-only: no run-record field removed/renamed and no field newly required vs the committed baseline" "removed/renamed:[$add_removed ] newly-required:[$add_newreq ]"
+  fi
+else
+  skip "run-record additive-only schema-stability guard (python3 unavailable)"
+fi
+
 echo "== error-class + bounded-retry failure injection (stub agents; both backends) =="
 # Inject failures with stub agents and assert the recorded error_class + retry behaviour: (a) a
 # transient 5xx, (b) an auth-shaped failure (never retried even with RETRY_MAX>0), (c) a sleep past a
