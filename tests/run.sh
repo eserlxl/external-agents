@@ -1203,6 +1203,40 @@ else
   skip "run-history analytics trends oracle (python3 unavailable)"
 fi
 
+echo "== run-history malformed-row tolerance (jq/python3 parity on a torn append; read-only) =="
+# A crashed/torn append can leave the append-only index with a final unparseable line. Both backends
+# must skip it and still report (the header's "value-equivalent JSON" contract) — never abort. This is
+# the regression guard for the jq backend, which used `jq -s` (whole-file slurp that aborts on ANY
+# malformed line) before being switched to a line-by-line `inputs | fromjson?` slurp.
+if command -v python3 >/dev/null 2>&1; then
+  RHM="$ROOT/scripts/run-history-report.sh"
+  mbase="$(mktemp -d)"
+  printf '%s\n' '{"error_class":"ok","rc":0,"sec":3,"bytes":100,"signals":{"tokens":50}}' >"$mbase/index.jsonl"
+  printf '%s\n' '{"error_class":"ok","rc":0,"sec":5,"bytes":' >>"$mbase/index.jsonl"   # torn final line
+  m_runs() { printf '%s' "$1" | python3 -c 'import json,sys; print(json.load(sys.stdin).get("runs"))' 2>/dev/null; }
+  mrestr="$(mktemp -d)"; mk_restricted_bin "$mrestr"   # python3, NO jq -> forces the python3 backend
+  m_py="$(PATH="$mrestr/bin" "$mrestr/bin/bash" "$RHM" --json "$mbase/index.jsonl" 2>/dev/null)"; m_py_rc=$?
+  m_runs_py="$(m_runs "$m_py")"
+  assert_exit     "malformed[py]: report still exits 0 over a torn index" 0 "$m_py_rc"
+  assert_contains "malformed[py]: the valid row is still counted (runs=1)" "$m_runs_py" "1"
+  if command -v jq >/dev/null 2>&1; then
+    m_jq="$(bash "$RHM" --json "$mbase/index.jsonl" 2>/dev/null)"; m_jq_rc=$?
+    m_runs_jq="$(m_runs "$m_jq")"
+    assert_exit     "malformed[jq]: report still exits 0 over a torn index (no abort)" 0 "$m_jq_rc"
+    assert_contains "malformed[jq]: the valid row is still counted (runs=1)" "$m_runs_jq" "1"
+    if [ "$m_runs_jq" = "$m_runs_py" ]; then
+      ok "malformed: jq and python3 agree on runs over a torn index (value-equivalent)"
+    else
+      bad "malformed: jq and python3 agree on runs over a torn index" "jq=$m_runs_jq py=$m_runs_py"
+    fi
+  else
+    skip "malformed[jq] tolerance (jq unavailable)"
+  fi
+  rm -rf "$mrestr" "$mbase"
+else
+  skip "run-history malformed-row tolerance oracle (python3 unavailable)"
+fi
+
 echo "== run-history recoverability + rotation oracle (backup/restore content-identity; offline) =="
 # Drill the RUNBOOK.md backup/restore + rotation procedures over a committed fixture in a DISPOSABLE
 # base (under mktemp, never the repo): back up -> corrupt -> restore -> assert content-identical (+

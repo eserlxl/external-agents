@@ -45,8 +45,12 @@ fi
 compute_metrics() {
   local idx="$1"
   if command -v jq >/dev/null 2>&1; then
-    jq -s '
-      def r6: (. * 1000000 | round) / 1000000;
+    # Read line-by-line and drop any blank/unparseable line (fromjson?), so a torn append in the
+    # append-only index degrades exactly as the python3 backend does (skip the bad row) instead of
+    # aborting the whole report — the two backends stay value-equivalent over a corrupt index.
+    jq -n -R '
+      [inputs | fromjson? // empty]
+      | def r6: (. * 1000000 | round) / 1000000;
       (map(.error_class // (if .rc == 0 then "ok" else "unknown" end)))            as $cls
       | (map(.sec    | numbers))                                                   as $sec
       | (map(.bytes  | numbers))                                                   as $byt
