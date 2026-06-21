@@ -472,6 +472,42 @@ else
   skip "stub-driven pipeline oracle (timeout/python3 unavailable)"
 fi
 
+echo "== pipeline edge oracles (--continue completed-through-K, empty-token skip, same-agent ordering) =="
+# The pipeline oracle above covers the happy path. Pin three edges of scripts/run-pipeline.sh:
+# (a) a mid-pipeline failure STOPS without --continue but RUNS every stage with --continue, and the
+# completed-through-K verdict counts only the ok stages; (b) an empty/whitespace stage token (a,,b) is
+# skipped (run-pipeline.sh:52); (c) the same agent twice runs as two ordered stages. Stub-driven, CLI-free.
+if command -v timeout >/dev/null 2>&1 && command -v python3 >/dev/null 2>&1; then
+  pe_stub="$(mktemp -d)"
+  printf '#!/usr/bin/env bash\nexit 1\n'  >"$pe_stub/codex";        chmod +x "$pe_stub/codex"        # fails -> ec unknown
+  printf '#!/usr/bin/env bash\necho ok\n' >"$pe_stub/claude";       chmod +x "$pe_stub/claude"       # ok
+  printf '#!/usr/bin/env bash\necho ok\n' >"$pe_stub/cursor-agent"; chmod +x "$pe_stub/cursor-agent" # ok (cursor)
+  pe_run() {  # args... -> pipeline stdout (fixed prompt/mode/target appended)
+    local tg ob; tg="$(mktemp -d)"; ob="$(mktemp -d)"
+    PATH="$pe_stub:$PATH" EXTERNAL_AGENTS_OUT="$ob" bash "$ROOT/scripts/run-pipeline.sh" "$@" --prompt p --read-only --target "$tg" 2>&1
+    rm -rf "$tg" "$ob"
+  }
+  # (a) failure-then-success: stop without --continue; run-through with --continue (K counts ok only)
+  pe_stop="$(pe_run --pipeline codex,claude)"
+  assert_contains "pipeline edge: stops at the first failed stage without --continue" "$pe_stop" "stopping at stage 1"
+  assert_contains "pipeline edge: completed-through 0/2 when stage 1 fails (no --continue)" "$pe_stop" "completed-through-stage 0/2"
+  pe_cont="$(pe_run --continue --pipeline codex,claude)"
+  case "$pe_cont" in *"stopping at stage"*) bad "pipeline edge: --continue runs past a failed stage" "stopped despite --continue";; *) ok "pipeline edge: --continue runs past a failed stage (no stop)";; esac
+  assert_contains "pipeline edge: --continue completed-through 1/2 (only the ok stage counts)" "$pe_cont" "completed-through-stage 1/2"
+  # (b) empty/whitespace token skipped (claude,,cursor -> two stages, empty dropped)
+  pe_empty="$(pe_run --pipeline claude,,cursor)"
+  assert_contains "pipeline edge: empty token skipped -> stage 1 claude" "$pe_empty" "stage 1/3 claude"
+  assert_contains "pipeline edge: empty token skipped -> stage 2 cursor" "$pe_empty" "stage 2/3 cursor"
+  assert_contains "pipeline edge: empty token skipped -> both ok stages counted (2/3)" "$pe_empty" "completed-through-stage 2/3"
+  # (c) same agent twice -> two ordered stages
+  pe_twice="$(pe_run --pipeline claude,claude)"
+  assert_contains "pipeline edge: same agent twice -> stage 1/2 claude" "$pe_twice" "stage 1/2 claude"
+  assert_contains "pipeline edge: same agent twice -> stage 2/2 claude" "$pe_twice" "stage 2/2 claude"
+  rm -rf "$pe_stub"
+else
+  skip "pipeline edge oracles (timeout/python3 unavailable)"
+fi
+
 echo "== pipeline outcome summary is content-free (control-plane facts only, no transcript text) =="
 # The deterministic pipeline outcome summary (per-stage agent/class/rc/sec/bytes + completed-through-
 # stage-K) must carry control-plane facts ONLY — never transcript text, mirroring the fan-out summary.
