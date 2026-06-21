@@ -786,6 +786,28 @@ assert_contains "run-agent.sh --version prints the plugin version" "$out" "$pv"
 out="$(bash "$RUN" -V 2>/dev/null)"
 assert_contains "run-agent.sh -V prints the plugin version" "$out" "$pv"
 
+echo "== CHANGELOG.md Keep a Changelog structure (preamble + newest dated entry + change-type subsections) =="
+# CHANGELOG.md must keep the Keep a Changelog + SemVer preamble and a newest dated '## [X.Y.Z] - DATE'
+# entry carrying a change-type subsection. The bumper writes this shape, but no guard pins it, so a
+# manual edit could silently break the published changelog structure.
+CL="$ROOT/CHANGELOG.md"
+if grep -qiF 'keep a changelog' "$CL" && grep -qiF 'semantic versioning' "$CL"; then
+  ok "changelog: Keep a Changelog + SemVer preamble present"
+else
+  bad "changelog: Keep a Changelog + SemVer preamble present" "preamble missing"
+fi
+if grep -qm1 -E '^## \[[0-9]+\.[0-9]+\.[0-9]+\] - [0-9]{4}-[0-9]{2}-[0-9]{2}' "$CL"; then
+  ok "changelog: newest entry is a dated '## [X.Y.Z] - YYYY-MM-DD' header"
+else
+  bad "changelog: newest entry is a dated '## [X.Y.Z] - YYYY-MM-DD' header" "no dated version header"
+fi
+cl_sub="$(awk '/^## \[[0-9]/{n++} n==1 && /^### (Added|Changed|Fixed|Removed|Deprecated|Security)/{print; exit}' "$CL")"
+if [ -n "$cl_sub" ]; then
+  ok "changelog: newest entry carries a change-type subsection (### Added/Changed/Fixed/...)"
+else
+  bad "changelog: newest entry carries a change-type subsection" "no ### change-type subsection in the newest entry"
+fi
+
 echo "== bump-version.sh version compute (--dry-run, no writes) =="
 BV="$ROOT/scripts/bump-version.sh"
 core="${pv%%-*}"   # current release core, pre-release suffix stripped
