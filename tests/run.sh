@@ -1078,6 +1078,41 @@ else
   skip "run-record schema drift guard (python3 unavailable)"
 fi
 
+echo "== run-record doc <-> schema drift guard (run-record-contract.md fields == schema record+signals+index) =="
+# Mirrors the emitter<->schema guard above: the field-by-field reference in docs/run-record-contract.md
+# must document EXACTLY the schema's documentable leaf fields — record scalars, signals.tokens/cost, and
+# the index-row run_id/project — so the published contract doc cannot silently drift from the schema.
+if command -v python3 >/dev/null 2>&1; then
+  # shellcheck disable=SC2016  # literal backtick/regex, not a shell expansion
+  docdrift_doc="$(grep -oE '^\| `[a-z_.]+`' "$ROOT/docs/run-record-contract.md" | tr -d '|` ' | sort -u | paste -sd' ' -)"
+  docdrift_schema="$(python3 -c 'import json,sys
+s=json.load(open(sys.argv[1]))
+rec=set(s["definitions"]["record"]["properties"])
+sig=set(s["definitions"]["signals"]["properties"])
+allp=set()
+def walk(n):
+    if isinstance(n, dict):
+        for k in (n.get("properties") or {}):
+            allp.add(k)
+        for key in ("allOf", "oneOf", "anyOf"):
+            for x in n.get(key, []) or []:
+                walk(x)
+        for x in (n.get("definitions") or {}).values():
+            walk(x)
+walk(s)
+extra = allp - rec - sig - {"signals"}
+leaf = (rec - {"signals"}) | {"signals." + k for k in sig} | extra
+print(" ".join(sorted(leaf)))' "$ROOT/schema/run-record.schema.json" 2>/dev/null)"
+  if [ -n "$docdrift_doc" ] && [ "$docdrift_doc" = "$docdrift_schema" ]; then
+    ok "doc drift: run-record-contract.md documents exactly the schema's record+signals+index fields"
+  else
+    bad "doc drift: run-record-contract.md documents exactly the schema's record+signals+index fields" \
+        "doc=[$docdrift_doc] schema=[$docdrift_schema]"
+  fi
+else
+  skip "run-record doc drift guard (python3 unavailable)"
+fi
+
 echo "== error-class + bounded-retry failure injection (stub agents; both backends) =="
 # Inject failures with stub agents and assert the recorded error_class + retry behaviour: (a) a
 # transient 5xx, (b) an auth-shaped failure (never retried even with RETRY_MAX>0), (c) a sleep past a
