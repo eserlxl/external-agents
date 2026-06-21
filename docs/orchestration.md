@@ -63,6 +63,18 @@ A `--agent all` fan-out already returns N transcripts plus a deterministic **agr
 into a **quorum verdict** a caller can act on — still **outcome-based and deterministic**, never an
 interpretation of free text.
 
+### Invocation
+
+Surface the verdict by adding `--consensus` to a `--agent all` fan-out:
+
+```
+scripts/run-agent.sh --agent all --consensus --prompt P [--json]
+```
+
+`--consensus` is **additive and opt-in**: without it the fan-out output is unchanged. With it, the
+driver prints one extra line — `consensus: <verdict> (<ok>/<n> agents succeeded)` — and, under
+`--json`, includes the verdict in a `consensus` field (omitted entirely when `--consensus` is absent).
+
 ### Deterministic outcome-consensus verdict
 
 Over the parallel fan-out's per-agent **success tally** (an agent succeeded iff its run was `ok`), the
