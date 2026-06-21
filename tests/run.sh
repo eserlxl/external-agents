@@ -65,6 +65,33 @@ dry "cursor read-only -> composer-2.5"           "composer-2.5"                 
 dry "cursor write -> --force"                    "--force"                       -- --agent cursor --write     --effort medium
 dry "cursor binary is cursor-agent"              "cursor-agent"                  -- --agent cursor --write     --effort medium
 
+echo "== per-agent per-tier model resolution (dry-run resolved model == agents.json tier model) =="
+# Pin tier->model resolution for EVERY agent x tier so a resolver regression (a wrong model for a tier)
+# fails offline. The expectation is read DYNAMICALLY from agents.json so an intentional model bump
+# updates both sides at once, not a brittle literal. agy high/xhigh carry a quota fallback, so force the
+# quota CLI to fail and expect the Gemini 'fallback' deterministically.
+if command -v jq >/dev/null 2>&1; then
+  mr_check() {  # agent tier [env-assignment]
+    local a="$1" t="$2" env="${3:-}" exp got
+    exp="$(jq -r --arg a "$a" --arg t "$t" '.agents[$a].tiers[$t] | (.fallback // .model)' "$ROOT/agents.json")"
+    got="$(env ${env:+$env} bash "$RUN" --agent "$a" --read-only --effort "$t" --dry-run --prompt x 2>/dev/null)"
+    case "$got" in
+      *"$exp"*) ok "model resolution: $a/$t resolves '$exp'";;
+      *)        bad "model resolution: $a/$t resolves '$exp'" "resolved argv lacks the configured tier model";;
+    esac
+  }
+  for t in low medium high xhigh; do
+    mr_check codex  "$t"
+    mr_check cursor "$t"
+    mr_check claude "$t"   # disabled, but an explicit --agent claude still resolves its tier in dry-run
+  done
+  mr_check agy low; mr_check agy medium
+  mr_check agy high  "EXTERNAL_AGENTS_AGY_QUOTA_CMD=false"
+  mr_check agy xhigh "EXTERNAL_AGENTS_AGY_QUOTA_CMD=false"
+else
+  skip "per-tier model resolution (jq unavailable)"
+fi
+
 echo "== enforcement-matrix accuracy (docs/threat-model.md vs driver read-only argv) =="
 # For each agent the read-only mechanism the driver actually emits must also be the one the
 # published matrix documents — so docs/threat-model.md cannot silently drift from the driver.
