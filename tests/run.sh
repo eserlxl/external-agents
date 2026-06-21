@@ -1455,6 +1455,32 @@ else
   skip "redaction tests (timeout unavailable)"
 fi
 
+echo "== transcript redaction: per-pattern coverage (each redact() rule has a synthetic-fixture oracle) =="
+# redact() in scripts/run-agent.sh masks several length-bounded secret-shaped patterns; the block
+# above only exercises sk-. Give EACH rule a synthetic fixture so narrowing any one pattern fails
+# offline. Synthetic tokens only — never a real secret; matched values are never printed.
+if command -v timeout >/dev/null 2>&1; then
+  red_case() {  # label  synthetic-token
+    local label="$1" tok="$2" out file rf
+    rf="$(mktemp)"
+    out="$(run_stub_transcript "leak $tok here" "$rf")"
+    file="$(cat "$rf")"; rm -f "$rf"
+    if printf '%s' "$out"  | grep -qF -- "$tok"; then bad "redaction[$label]: raw token absent from echoed transcript"    "leaked to stdout"; return; fi
+    if printf '%s' "$file" | grep -qF -- "$tok"; then bad "redaction[$label]: raw token absent from persisted transcript" "leaked to disk";   return; fi
+    assert_contains "redaction[$label]: placeholder present after masking" "$out" "<REDACTED>"
+  }
+  red_case "pk-token"     "pk-ABCDEFGHIJKLMNOPQRSTUV0123456789"
+  red_case "gh-token"     "ghp_ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
+  red_case "github_pat"   "github_pat_ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
+  red_case "xox-slack"    "xoxb-ABCDEFGHIJ-KLMNOPQRSTUV"
+  red_case "aws-akia"     "AKIAABCDEFGHIJKLMNOP"
+  red_case "bearer"       "Bearer ABCDEFGHIJKLMNOPQRSTUVWX0123456789"
+  red_case "assignment"   "API_SECRET=abcdef0123456789xyz"
+  red_case "high-entropy" "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghij0123456789KLMN"
+else
+  skip "per-pattern redaction tests (timeout unavailable)"
+fi
+
 echo "== redaction false-positive guard (ordinary content survives) =="
 if command -v timeout >/dev/null 2>&1; then
   rf="$(mktemp)"
