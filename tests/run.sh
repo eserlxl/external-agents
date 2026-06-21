@@ -637,6 +637,34 @@ assert_exit "--timeout 0 exits 2" 2 "$?"
 bash "$RUN" --agent codex --dry-run --timeout 30 --prompt x >/dev/null 2>&1
 assert_exit "valid --timeout 30 accepted" 0 "$?"
 
+echo "== prompt injection safety (prompt is one verbatim argv element, never eval'd) =="
+# threat-model.md "Prompt integrity": the task text must reach the agent as a SINGLE argv element and
+# never be shell-evaluated. The <PROMPT>-masking assertions prove the dry-run DISPLAY masks it; this
+# proves the RUNTIME contract. Drive a stub agent that records its argv, pass a prompt full of shell
+# metacharacters incl. command-substitution/backtick sentinels, and assert (a) no sentinel command
+# ran (no driver-side eval/expansion) and (b) the agent got the prompt as ONE verbatim argv element.
+if command -v timeout >/dev/null 2>&1; then
+  injdir="$(mktemp -d)"; injtgt="$(mktemp -d)"; injod="$(mktemp -d)"
+  injrec="$injdir/argv.txt"; injsent="$injdir/SENTINEL"
+  cat >"$injdir/codex" <<INJEOF
+#!/usr/bin/env bash
+printf 'ARGC=%s\n' "\$#" >"$injrec"
+for a in "\$@"; do printf 'ARG=%s\n' "\$a" >>"$injrec"; done
+INJEOF
+  chmod +x "$injdir/codex"
+  # shellcheck disable=SC2016  # the metacharacters below are LITERAL injection-test payloads, not expansions
+  inj_sub='$(touch '"$injsent"')'
+  # shellcheck disable=SC2016
+  inj_bt='`touch '"$injsent"'`'
+  inj_prompt="benign $inj_sub $inj_bt ; echo injected ; nomatch-*-glob"
+  PATH="$injdir:$PATH" EXTERNAL_AGENTS_OUT="$injod" bash "$RUN" --agent codex --read-only --target "$injtgt" --prompt "$inj_prompt" >/dev/null 2>&1
+  if [ -e "$injsent" ]; then bad "injection: command-substitution/backtick in prompt never executes" "sentinel created -> driver evaluated the prompt"; else ok "injection: command-substitution/backtick in prompt never executes"; fi
+  if grep -qF -- "$inj_prompt" "$injrec" 2>/dev/null; then ok "injection: prompt reaches the agent as a single verbatim argv element"; else bad "injection: prompt reaches the agent as a single verbatim argv element" "recorded argv: $(tr '\n' '|' <"$injrec" 2>/dev/null)"; fi
+  rm -rf "$injdir" "$injtgt" "$injod"
+else
+  skip "prompt injection oracle (timeout unavailable)"
+fi
+
 echo "== version lockstep (plugin.json == SKILL.md == README badge) =="
 pv="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["version"])' "$ROOT/.claude-plugin/plugin.json")"
 sv="$(grep -oE '^  version: "[^"]+"' "$ROOT/skills/external-agents/SKILL.md" | head -1 | sed -E 's/.*"([^"]+)".*/\1/')"
