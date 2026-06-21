@@ -5,7 +5,7 @@
 [![CI](https://github.com/eserlxl/external-agents/actions/workflows/ci.yml/badge.svg)](https://github.com/eserlxl/external-agents/actions/workflows/ci.yml)
 [![Claude Code plugin](https://img.shields.io/badge/Claude%20Code-plugin-8A2BE2.svg)](https://docs.claude.com/en/docs/claude-code/overview)
 [![Run external CLIs as sub-agents](https://img.shields.io/badge/dispatch-agy%20%C2%B7%20codex%20%C2%B7%20claude%20%C2%B7%20cursor-0A7BBB.svg)](#what-it-drives)
-[![version](https://img.shields.io/badge/version-0.8.0-informational.svg)](.claude-plugin/plugin.json)
+[![version](https://img.shields.io/badge/version-0.9.0-informational.svg)](.claude-plugin/plugin.json)
 [![License: GPL-3.0-or-later](https://img.shields.io/badge/license-GPL--3.0--or--later-blue.svg)](LICENSE)
 
 </div>

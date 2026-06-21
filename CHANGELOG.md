@@ -4,6 +4,43 @@ All notable changes to external-agents are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/),
 and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [0.9.0] - 2026-06-21
+
+A feature release focused on **multi-agent orchestration and registry-driven
+extensibility** — all additive and backward-compatible (every 0.8.0 flag, default,
+`agents.json` key, and run-record field is preserved).
+
+### Added
+- **Pipeline orchestration (Phase 9.4).** `scripts/run-pipeline.sh` runs agents in an
+  ordered, multi-stage sequence with artifact seeding between stages and per-stage
+  failure handling, pinned by an offline outcome-summary oracle that asserts only
+  control-plane facts (never transcript content).
+- **Outcome-consensus verdict (Phase 9.5).** `--json` output now carries a deterministic
+  consensus verdict derived from per-agent outcomes, proven by a stub-driven consensus
+  oracle.
+- **Adapter-registry agent extensibility (Phase 9.2).** Adding an agent is now a
+  registry-only change: per-agent argv builders are extracted and agent validation is
+  unified through the `ADAPTER_BIN` registry, decoupling policy from the dispatcher.
+  New extensibility guide plus registry-argv parity and policy-decoupling guards.
+
+### Changed
+- Agent validation and launch-argv construction are driven by the `ADAPTER_BIN`
+  registry across all backends, replacing per-agent special-casing.
+
+### Fixed
+- Malformed rows in the run-history index are handled with line-by-line `fromjson?`
+  parsing, restoring jq/python3 parity instead of aborting.
+- Guard an empty `AGENT` before `ADAPTER_BIN` array indexing, fixing a "bad array
+  subscript" error on `--check` / `--discover`.
+- `run-history` archive prune now sorts by mtime, avoiding same-second collisions.
+- `bump-version.sh` tracks and reports failed restores in its transactional rollback.
+- `verify_install` captures output before `grep` so `pipefail` no longer masks headers.
+
+### Docs
+- Orchestration patterns (pipeline + consensus), the Phase 9.2 extensibility guide, the
+  `run-pipeline.sh` invocation/flag reference, and threat-model semantic anchors
+  (replacing fragile line-number citations).
+
 ## [0.8.0] - 2026-06-20
 
 ### Changed
