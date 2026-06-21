@@ -69,7 +69,7 @@ Over the parallel fan-out's per-agent **success tally** (an agent succeeded iff 
 consensus verdict is a **majority/quorum** over the panel:
 
 - `consensus`  — a strict majority of the panel succeeded (`ok` count > half the panel);
-- `no-quorum`  — exactly half succeeded (a tie, no majority);
+- `no-quorum`  — no majority succeeded: a tie **or** a minority (`ok` count ≤ half the panel but > 0);
 - `none`       — no agent succeeded.
 
 It is computed from the per-agent success count / records, **never** from transcript text, so it is

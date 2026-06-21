@@ -438,6 +438,16 @@ else
   skip "stub-driven consensus oracle (timeout/python3 unavailable)"
 fi
 
+echo "== orchestration.md consensus wording matches the tested verdict (no-quorum = tie OR minority) =="
+# no-quorum fires for ANY non-majority non-zero success (run-agent.sh else branch; tested above for
+# minority 1/3 and tie 1/2). README points to docs/orchestration.md as the canonical consensus
+# reference, so its no-quorum definition must not silently re-drift to a tie-only description.
+if grep -qiE 'no-quorum.*minorit|minorit.*no-quorum' "$ROOT/docs/orchestration.md"; then
+  ok "orchestration.md: no-quorum documents the minority case (not tie-only)"
+else
+  bad "orchestration.md: no-quorum documents the minority case (not tie-only)" "no-quorum still described as tie-only"
+fi
+
 echo "== --json consensus field: additive + byte-identical across config backends (Phase 9.5) =="
 # The consensus verdict is an ADDITIVE --json field: present only under --consensus (the doc is
 # byte-for-byte unchanged without it, per-agent rows unchanged), byte-identical across config backends,
