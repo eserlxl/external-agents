@@ -173,6 +173,26 @@ else
   skip "api missing-key auth oracle (python3 unavailable)"
 fi
 
+echo "== api-client.py CLI exit-code contract (offline; no network) =="
+# api-client.py's pre-network argument/key validation defines the exit codes run-agent.sh
+# classify_outcome maps to error classes (4 -> auth, 5 -> transient, 3 -> unknown). The suite
+# otherwise only checks the argv run-agent.sh BUILDS for an api agent — it never runs api-client.py
+# itself — so pin those exit codes directly. Every case exits BEFORE any http_post (no network),
+# and keys are unset + `pass` disabled so it is deterministic even with real keys exported.
+if command -v python3 >/dev/null 2>&1; then
+  AC="$ROOT/scripts/api-client.py"
+  EXTERNAL_AGENTS_NO_PASS=1 python3 "$AC" --provider openai --model m --prompt '' >/dev/null 2>&1
+  assert_exit "api-client.py: empty prompt -> exit 2" 2 "$?"
+  EXTERNAL_AGENTS_NO_PASS=1 python3 "$AC" --provider openai --prompt hi >/dev/null 2>&1
+  assert_exit "api-client.py: missing --model -> exit 2" 2 "$?"
+  env -u OPENAI_API_KEY EXTERNAL_AGENTS_NO_PASS=1 python3 "$AC" --provider openai --model m --prompt hi >/dev/null 2>&1
+  assert_exit "api-client.py: missing key -> exit 4 (auth, before any network call)" 4 "$?"
+  python3 "$AC" --provider nope --model m --prompt hi >/dev/null 2>&1
+  assert_exit "api-client.py: invalid --provider -> exit 2" 2 "$?"
+else
+  skip "api-client.py CLI exit-code contract (python3 unavailable)"
+fi
+
 echo "== enforcement-matrix accuracy (docs/threat-model.md vs driver read-only argv) =="
 # For each agent the read-only mechanism the driver actually emits must also be the one the
 # published matrix documents — so docs/threat-model.md cannot silently drift from the driver.
