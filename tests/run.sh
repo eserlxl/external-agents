@@ -1357,6 +1357,27 @@ else
   skip "run-history malformed-row tolerance oracle (python3 unavailable)"
 fi
 
+echo "== additive-field tolerance: analytics + maintenance tolerate legacy rows (missing optional fields) =="
+# The additive-only run-record contract means an OLD index row predating error_class/attempts/retried/
+# signals must still aggregate and maintain cleanly — absence is never an error. The synthetic fixture
+# rows all carry the newer fields; feed a legacy-shaped row (only the original control-plane scalars)
+# alongside a modern row and assert the report counts BOTH (exit 0) and maintenance tolerates it (exit 0).
+if command -v python3 >/dev/null 2>&1; then
+  legdir="$(mktemp -d)"; legidx="$legdir/index.jsonl"
+  printf '%s\n' '{"run_id":"old1","timestamp":"2026-01-01T00:00:00Z","project":"p","agent":"codex","model":"m","tier":"high","effort":"high","mode":"readonly","target":"/t","rc":0,"sec":3,"bytes":120,"fallback":false}'  >"$legidx"
+  # shellcheck disable=SC2016  # literal JSON row; the $-prefixed cost string is fixture data, not a shell expansion
+  printf '%s\n' '{"run_id":"new1","timestamp":"2026-06-01T00:00:00Z","project":"p","agent":"codex","model":"m","tier":"high","effort":"high","mode":"readonly","target":"/t","rc":1,"sec":4,"bytes":130,"fallback":false,"error_class":"transient","attempts":2,"retried":true,"signals":{"tokens":900,"cost":"$0.05"}}' >>"$legidx"
+  leg_json="$(bash "$ROOT/scripts/run-history-report.sh" --json "$legidx" 2>/dev/null)"; leg_rc=$?
+  leg_runs="$(printf '%s' "$leg_json" | python3 -c 'import json,sys; print(json.load(sys.stdin).get("runs"))' 2>/dev/null)"
+  assert_exit     "additive-tolerance[report]: legacy row aggregates without error (exit 0)" 0 "$leg_rc"
+  assert_contains "additive-tolerance[report]: legacy + modern rows both counted (runs=2)"   "$leg_runs" "2"
+  EXTERNAL_AGENTS_OUT="$legdir" bash "$ROOT/scripts/run-history-maintain.sh" --force >/dev/null 2>&1
+  assert_exit "additive-tolerance[maintain]: tolerates a legacy row (exit 0)" 0 "$?"
+  rm -rf "$legdir"
+else
+  skip "additive-field tolerance oracle (python3 unavailable)"
+fi
+
 echo "== run-history recoverability + rotation oracle (backup/restore content-identity; offline) =="
 # Drill the RUNBOOK.md backup/restore + rotation procedures over a committed fixture in a DISPOSABLE
 # base (under mktemp, never the repo): back up -> corrupt -> restore -> assert content-identical (+
