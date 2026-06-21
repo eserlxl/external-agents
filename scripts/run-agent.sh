@@ -147,25 +147,30 @@ OPENROUTER_API_KEY) via `pass` — the var names a `pass` entry; see README and 
 EOF
 }
 
+# Require that a value-taking flag is actually followed by a value; otherwise reading `"$2"` trips
+# `set -u` with an opaque "$2: unbound variable" (exit 1). Fail cleanly (exit 2), like the sibling
+# scripts (run-history-report/run-pipeline/run-history-maintain, bump-version).
+need_val() { [ "$1" -ge 2 ] || { echo "run-agent: $2 needs a value" >&2; exit 2; }; }
+
 while [ $# -gt 0 ]; do
   case "$1" in
     -h|--help) usage; exit 0;;
-    --agent) AGENT="$2"; shift 2;;
-    --prompt) PROMPT="$2"; shift 2;;
-    --prompt-file) PROMPT_FILE="$2"; shift 2;;
-    --target) TARGET="$2"; shift 2;;
+    --agent) need_val "$#" "$1"; AGENT="$2"; shift 2;;
+    --prompt) need_val "$#" "$1"; PROMPT="$2"; shift 2;;
+    --prompt-file) need_val "$#" "$1"; PROMPT_FILE="$2"; shift 2;;
+    --target) need_val "$#" "$1"; TARGET="$2"; shift 2;;
     --read-only|--readonly)
       [ -n "$MODE_SET" ] && [ "$MODE" != "readonly" ] && { echo "run-agent: --read-only and --write are mutually exclusive" >&2; exit 2; }
       MODE="readonly"; MODE_SET=1; shift;;
     --write)
       [ -n "$MODE_SET" ] && [ "$MODE" != "write" ] && { echo "run-agent: --read-only and --write are mutually exclusive" >&2; exit 2; }
       MODE="write"; MODE_SET=1; shift;;
-    --effort) EFFORT="$2"; shift 2;;
-    --model) MODEL="$2"; shift 2;;
-    --claude-perm) CLAUDE_PERM="$2"; shift 2;;
-    --timeout) TIMEOUT="$2"; shift 2;;
-    --out) OUT="$2"; OUT_SET=1; shift 2;;
-    --conf) CONF="$2"; shift 2;;
+    --effort) need_val "$#" "$1"; EFFORT="$2"; shift 2;;
+    --model) need_val "$#" "$1"; MODEL="$2"; shift 2;;
+    --claude-perm) need_val "$#" "$1"; CLAUDE_PERM="$2"; shift 2;;
+    --timeout) need_val "$#" "$1"; TIMEOUT="$2"; shift 2;;
+    --out) need_val "$#" "$1"; OUT="$2"; OUT_SET=1; shift 2;;
+    --conf) need_val "$#" "$1"; CONF="$2"; shift 2;;
     --list) LIST=1; shift;;
     --check) CHECK=1; shift;;
     --discover) DISCOVER=1; shift;;

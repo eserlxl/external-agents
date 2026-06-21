@@ -1707,7 +1707,9 @@ vf_rc() {  # script-relpath flag -> exit code of `<script> <flag>` (no value), k
 for vf in "run-history-report.sh:--since" "run-history-report.sh:--agent" \
           "run-history-report.sh:--project" "run-history-report.sh:--until" \
           "run-pipeline.sh:--pipeline" "run-pipeline.sh:--prompt" \
-          "run-history-maintain.sh:--base"; do
+          "run-history-maintain.sh:--base" \
+          "run-agent.sh:--agent" "run-agent.sh:--prompt" \
+          "run-agent.sh:--target" "run-agent.sh:--timeout"; do
   vf_scr="${vf%%:*}"; vf_flg="${vf##*:}"
   assert_exit "missing value flag exits 2, never hangs: $vf_scr $vf_flg" 2 "$(vf_rc "$vf_scr" "$vf_flg")"
 done
