@@ -1696,6 +1696,22 @@ else
   skip "run-history analytics filters oracle (python3 unavailable)"
 fi
 
+echo "== arg parsing: a value-taking flag with no value exits 2, never hangs (regression) =="
+# Regression for 8499333: a value-taking flag passed as the FINAL arg made `shift 2` a no-op (bash
+# leaves the positional parameters unchanged when the shift count exceeds $#), so the
+# `while [ $# -gt 0 ]` arg loop spun forever. Each affected flag must now exit 2 (a clean usage error),
+# never hang — a `timeout` kill (exit 124) is the regression signal. Offline, no CLI, no network.
+vf_rc() {  # script-relpath flag -> exit code of `<script> <flag>` (no value), killed at 5s if it hangs
+  timeout 5 bash "$ROOT/scripts/$1" "$2" >/dev/null 2>&1; printf '%s' "$?"
+}
+for vf in "run-history-report.sh:--since" "run-history-report.sh:--agent" \
+          "run-history-report.sh:--project" "run-history-report.sh:--until" \
+          "run-pipeline.sh:--pipeline" "run-pipeline.sh:--prompt" \
+          "run-history-maintain.sh:--base"; do
+  vf_scr="${vf%%:*}"; vf_flg="${vf##*:}"
+  assert_exit "missing value flag exits 2, never hangs: $vf_scr $vf_flg" 2 "$(vf_rc "$vf_scr" "$vf_flg")"
+done
+
 echo "== run-history malformed-row tolerance (jq/python3 parity on a torn append; read-only) =="
 # A crashed/torn append can leave the append-only index with a final unparseable line. Both backends
 # must skip it and still report (the header's "value-equivalent JSON" contract) — never abort. This is
