@@ -717,7 +717,9 @@ PY
 extract_signal() {
   local file="$1" agent="$2" signal="$3" line
   [ -f "$file" ] || return 0
-  case "$agent" in agy|codex|claude|cursor) : ;; *) return 0;; esac
+  # Gate on REGISTRY membership (not a hard-coded list) so adding an agent stays a registry-only change:
+  # any ADAPTER_AGENTS member gets the shared conservative recognizer; an unknown agent gets no signal.
+  case " ${ADAPTER_AGENTS[*]} " in *" $agent "*) : ;; *) return 0;; esac
   case "$signal" in
     tokens)
       line="$(grep -ioE '(tokens[[:space:]]+used|total[[:space:]]+tokens)[[:space:]]*[:=][[:space:]]*[0-9]+|[0-9]+[[:space:]]+tokens' "$file" 2>/dev/null | head -1)"

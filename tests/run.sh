@@ -1108,6 +1108,23 @@ else
   skip "signal-extraction fixture test (timeout/python3 unavailable)"
 fi
 
+echo "== extract_signal is registry-driven (any ADAPTER_AGENTS member gets the recognizer, no hard-coded list) =="
+# Registry-only invariant guard: extract_signal must gate on ADAPTER_AGENTS membership, NOT a hard-coded
+# agent list, so a registry-only-added agent gets signal extraction with no emitter/policy edit — while
+# an UNREGISTERED agent still gets no signal (the conservative gate). Source just the function and drive
+# it with a synthetic agent name that is/ isn't in a test-set ADAPTER_AGENTS.
+es_fn="$(mktemp)"; sed -n '/^extract_signal() {/,/^}/p' "$ROOT/scripts/run-agent.sh" >"$es_fn"
+es_tx="$(mktemp)"
+# shellcheck disable=SC2016  # the literal '$0.12' is fixture cost text; it must NOT expand
+printf 'work done. total tokens: 4242 and total cost: $0.12\n' >"$es_tx"
+es_tok="$(bash -c 'ADAPTER_AGENTS=(agy codex claude cursor newagent); . "$1"; extract_signal "$2" newagent tokens' _ "$es_fn" "$es_tx" 2>/dev/null)"
+es_unreg="$(bash -c 'ADAPTER_AGENTS=(agy codex claude cursor); . "$1"; extract_signal "$2" newagent tokens' _ "$es_fn" "$es_tx" 2>/dev/null)"
+rm -f "$es_fn" "$es_tx"
+if [ "$es_tok" = "4242" ]; then ok "extract_signal: a registry-listed agent (in ADAPTER_AGENTS) gets the shared recognizer"
+else bad "extract_signal: a registry-listed agent gets the shared recognizer" "expected 4242, got '$es_tok' — extract_signal is not registry-driven (hard-coded list?)"; fi
+if [ -z "$es_unreg" ]; then ok "extract_signal: a NON-registry agent gets no signal (conservative gate preserved)"
+else bad "extract_signal: a NON-registry agent gets no signal" "expected empty, got '$es_unreg'"; fi
+
 echo "== cross-agent summary block (stub fan-out, no live CLI) =="
 # A --agent all fan-out prints a compact summary block (one row per agent + expected columns).
 # Assert its shape with stub agents, plus the write-mode target-wide note on a write fan-out.
