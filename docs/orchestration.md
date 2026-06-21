@@ -14,6 +14,17 @@ output, turning the fleet into a composable chain (e.g. one agent drafts, the ne
 An ordered agent list, e.g. `--pipeline agy,codex,claude` — the list order is the run order. Each stage
 is a single agent from the registry; the same agent may appear more than once.
 
+### Invocation
+
+Run the pipeline with `scripts/run-pipeline.sh`, which wraps the driver once per stage:
+
+```
+scripts/run-pipeline.sh --pipeline agy,codex,claude --prompt P [--target DIR] [--read-only|--write] [--continue]
+```
+
+Everything except `--pipeline`/`--prompt`/`--continue` is passed straight through to `scripts/run-agent.sh`
+for each stage, so every per-stage safety gate and record described below applies unchanged.
+
 ### Per-stage prompt seeding
 
 Stage 1 receives the user's prompt. Stage N+1 (N ≥ 1) receives the **base prompt plus stage N's
@@ -25,10 +36,10 @@ injection-safe, exactly like a single run.
 
 ### Stage-failure policy
 
-- **stop (default).** If a stage fails (non-`ok` `error_class`), the pipeline stops; later stages do
-  not run. The deterministic outcome records how far it got (completed-through-stage-K).
-- **continue (opt-in).** Every stage runs regardless; a failed stage's (redacted) artifact still seeds
-  the next. Use when later stages should see earlier failures.
+- **stop (default; omit `--continue`).** If a stage fails (non-`ok` `error_class`), the pipeline stops;
+  later stages do not run. The deterministic outcome records how far it got (completed-through-stage-K).
+- **continue (opt-in, `--continue`).** Every stage runs regardless; a failed stage's (redacted) artifact
+  still seeds the next. Use when later stages should see earlier failures.
 
 ### Per-stage artifact contract
 
