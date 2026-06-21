@@ -385,7 +385,9 @@ if [ "$CHECK" = "1" ]; then
     printf '  MISS %-7s need jq or python3 on PATH to read %s\n' "json" "$(basename "$CONF")"; missing=$((missing + 1))
   fi
   # A scoped --agent <name> probes just that agent; 'all'/unset probes the whole registry set.
-  if [ -n "${ADAPTER_BIN[$AGENT]:-}" ]; then cand=("$AGENT"); else cand=("${ADAPTER_AGENTS[@]}"); fi
+  # Guard $AGENT non-empty first: indexing the ADAPTER_BIN associative array with an empty subscript
+  # is a bash error ('bad array subscript') that the `:-` default cannot suppress.
+  if [ -n "$AGENT" ] && [ -n "${ADAPTER_BIN[$AGENT]:-}" ]; then cand=("$AGENT"); else cand=("${ADAPTER_AGENTS[@]}"); fi
   seen=""
   for a in "${cand[@]}"; do
     case ",$seen," in *",$a,"*) continue;; esac; seen="$seen,$a"
@@ -422,7 +424,8 @@ fi
 # to the harness. Config-independent, like --check, so it never needs agents.json.
 if [ "$DISCOVER" = "1" ]; then
   # A scoped --agent <name> lists just that agent; 'all'/unset lists the whole registry set.
-  if [ -n "${ADAPTER_BIN[$AGENT]:-}" ]; then dcand=("$AGENT"); else dcand=("${ADAPTER_AGENTS[@]}"); fi
+  # Guard $AGENT non-empty first (empty associative-array subscript is a bash 'bad array subscript').
+  if [ -n "$AGENT" ] && [ -n "${ADAPTER_BIN[$AGENT]:-}" ]; then dcand=("$AGENT"); else dcand=("${ADAPTER_AGENTS[@]}"); fi
   dseen=""
   for a in "${dcand[@]}"; do
     case ",$dseen," in *",$a,"*) continue;; esac; dseen="$dseen,$a"

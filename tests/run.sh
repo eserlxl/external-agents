@@ -1970,6 +1970,24 @@ assert_contains "--discover names cursor's cursor-agent binary" "$disc_out" "cur
 disc_lines="$(printf '%s\n' "$disc_out" | grep -cE '^(agy|codex|claude|cursor) (present|missing) ')"
 assert_exit     "--discover emits one shaped line per agent (4)" 4 "$disc_lines"
 
+echo "== --check / --discover clean stderr with no --agent (empty associative-subscript regression) =="
+# Bare --check / --discover (AGENT unset) must not index the ADAPTER_BIN associative array with an
+# empty subscript, which bash rejects with 'bad array subscript' (the `:-` default cannot suppress a
+# subscript-evaluation error). Capture STDERR only — the diagnostic output goes to stdout — so the
+# error leak is caught regardless of which agent CLIs happen to be installed.
+ck_err="$(bash "$RUN" --check 2>&1 >/dev/null)"
+if printf '%s\n' "$ck_err" | grep -q 'bad array subscript'; then
+  bad "--check (no --agent): no 'bad array subscript' on stderr" "$ck_err"
+else
+  ok "--check (no --agent): no 'bad array subscript' on stderr"
+fi
+ds_err="$(bash "$RUN" --discover 2>&1 >/dev/null)"
+if printf '%s\n' "$ds_err" | grep -q 'bad array subscript'; then
+  bad "--discover (no --agent): no 'bad array subscript' on stderr" "$ds_err"
+else
+  ok "--discover (no --agent): no 'bad array subscript' on stderr"
+fi
+
 echo "== auth-contract consistency (README per-agent contract <-> driver agents/bins; presence-only) =="
 # (1) The documented per-agent auth-prerequisite contract (README "Per-agent auth prerequisites") must
 # stay consistent with the driver's known agent set + agent_bin mapping. (2) --check/--discover must
