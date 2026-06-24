@@ -705,20 +705,21 @@ build_argv() {  # agent ; sets global ARGV[], RESOLVED_MODEL, FALLBACK_TAKEN, PR
 # masks known token prefixes (sk-/pk-, gh*_/github_pat_, xox*-, AKIA…), Bearer tokens,
 # KEY=/TOKEN=/SECRET=/PASSWORD= assignments, and a generic long high-entropy run.
 redact() {
-  # The high-precision rules below (token prefixes, Bearer, KEY=/TOKEN=/SECRET=/PASSWORD= assignments)
-  # ALWAYS run. The final generic "long base64-ish run" rule is best-effort and FALSE-POSITIVES on
-  # legitimate generated code (base64 data-URIs, long minified/hashed identifiers), corrupting it. Callers
-  # that intentionally capture code output can disable just that rule with EXTERNAL_AGENTS_NO_BASE64_REDACT=1
-  # (default: unset -> rule applies, behavior unchanged).
-  local -a generic=()
+  # Token-prefix + Bearer rules (genuine secret shapes) ALWAYS run. Two rules FALSE-POSITIVE on legitimate
+  # generated code and can be disabled by code-capturing callers (default: unset -> both apply, unchanged):
+  #   * KEY=/TOKEN=/SECRET=/PASSWORD= ASSIGNMENTS — masks e.g. `const CART_KEY = 'cart_v1'` in real code;
+  #     disable with EXTERNAL_AGENTS_NO_SECRET_REDACT=1.
+  #   * the generic "long base64-ish run" (data-URIs, minified/hashed ids) — EXTERNAL_AGENTS_NO_BASE64_REDACT=1.
+  local -a generic=() assign=()
   [ -z "${EXTERNAL_AGENTS_NO_BASE64_REDACT:-}" ] && generic=(-e 's#[A-Za-z0-9+/]{40,}={0,2}#<REDACTED>#g')
+  [ -z "${EXTERNAL_AGENTS_NO_SECRET_REDACT:-}" ] && assign=(-e 's/(([A-Za-z0-9_]*(KEY|TOKEN|SECRET|PASSWORD|PASSWD))[[:space:]]*[=:][[:space:]]*)[^[:space:]]{8,}/\1<REDACTED>/Ig')
   sed -E \
     -e 's/(sk|pk)-[A-Za-z0-9_-]{20,}/\1-<REDACTED>/g' \
     -e 's/(gh[posru]|github_pat)_[A-Za-z0-9_]{20,}/\1_<REDACTED>/g' \
     -e 's/xox[baprs]-[A-Za-z0-9-]{10,}/xox-<REDACTED>/g' \
     -e 's/AKIA[0-9A-Z]{16}/AKIA<REDACTED>/g' \
     -e 's#([Bb]earer[[:space:]]+)[A-Za-z0-9._~+/-]{20,}#\1<REDACTED>#g' \
-    -e 's/(([A-Za-z0-9_]*(KEY|TOKEN|SECRET|PASSWORD|PASSWD))[[:space:]]*[=:][[:space:]]*)[^[:space:]]{8,}/\1<REDACTED>/Ig' \
+    "${assign[@]}" \
     "${generic[@]}"
 }
 
