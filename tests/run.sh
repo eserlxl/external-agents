@@ -57,6 +57,13 @@ dry "agy write -> skip-permissions"              "--dangerously-skip-permissions
 dry "codex read-only -> -s read-only"            "-s read-only"                  -- --agent codex  --read-only --effort high
 dry "codex high -> model_reasoning_effort"       'model_reasoning_effort="high"' -- --agent codex  --read-only --effort high
 dry "codex write -> -s workspace-write"          "-s workspace-write"            -- --agent codex  --write     --effort high
+dry "codex --final-answer -> --output-last-message" "--output-last-message"       -- --agent codex  --read-only --effort high --final-answer
+# --final-answer is additive: codex's argv must NOT carry --output-last-message without it.
+out_noFA="$(bash "$RUN" --dry-run --agent codex --read-only --effort high --prompt x 2>/dev/null)"
+case "$out_noFA" in
+  *--output-last-message*) bad "codex without --final-answer omits --output-last-message" "unexpected flag present";;
+  *)                       ok  "codex without --final-answer omits --output-last-message";;
+esac
 dry "claude write -> permission-mode acceptEdits" "--permission-mode acceptEdits" -- --agent claude --write     --effort high
 dry "claude high -> --effort high"               "--effort high"                 -- --agent claude --write     --effort high
 dry "claude read-only -> allowedTools"           "--allowedTools"                -- --agent claude --read-only --effort high

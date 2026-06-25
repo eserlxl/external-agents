@@ -102,6 +102,7 @@ DRYRUN=0
 VERSION=0
 JSON=0
 CONSENSUS=0                  # --consensus: surface the deterministic outcome-consensus verdict (additive)
+FINAL_ANSWER=0               # --final-answer: also write a cleaned <agent>.answer sidecar (additive)
 
 usage() {
   cat <<'EOF'
@@ -132,6 +133,8 @@ Usage:
   --check       preflight: report the JSON reader and whether each candidate CLI is on PATH
   --discover    print one machine-readable line per agent: "<a> <present|missing> <bin>"
   --json        also emit a machine-readable JSON run summary (opt-in; default output unchanged)
+  --final-answer also write a cleaned <agent>.answer sidecar (final assistant message only;
+                codex via --output-last-message, others reuse print output). <agent>.md unchanged.
   --dry-run     print each agent's resolved launch argv without running it
   --version, -V print the external-agents plugin version and exit
   --yes, -y     confirm a write run whose --target is not the current directory
@@ -176,6 +179,7 @@ while [ $# -gt 0 ]; do
     --discover) DISCOVER=1; shift;;
     --json) JSON=1; shift;;
     --consensus) CONSENSUS=1; shift;;
+    --final-answer) FINAL_ANSWER=1; shift;;
     -y|--yes) YES=1; shift;;
     --dry-run) DRYRUN=1; shift;;
     --version|-V) VERSION=1; shift;;
@@ -639,6 +643,9 @@ argv_codex() {
   else ARGV=(codex exec -s workspace-write -C "$TARGET" --skip-git-repo-check); fi
   [ -n "$m" ] && ARGV+=(-m "$m")
   [ -n "$e" ] && ARGV+=(-c "model_reasoning_effort=\"$e\"")
+  # codex exec streams a transcript to stdout; --output-last-message captures ONLY the final
+  # assistant message to a file, so --final-answer can surface a clean answer (see run_one).
+  [ "$FINAL_ANSWER" = "1" ] && ARGV+=(--output-last-message "$OUT/codex.lastmsg")
   ARGV+=("$PROMPT"); PROMPT_IDX=$(( ${#ARGV[@]} - 1 ))
 }
 argv_claude() {
@@ -924,6 +931,17 @@ run_one() {  # agent  (cwd=TARGET) — stdout->$OUT/<a>.md (redacted), stderr->.
   done
   t1=$(date +%s 2>/dev/null || echo 0)
   echo "$rc" >"$OUT/$a.rc"; echo "$((t1 - t0))" >"$OUT/$a.sec"
+  # --final-answer (additive): write a cleaned, redacted <agent>.answer holding ONLY the final
+  # assistant message. codex sources it from its --output-last-message file (its .md is a full
+  # transcript); every other agent's print-mode .md is already the answer, so .answer mirrors it.
+  # <agent>.md is never modified here, so existing consumers (e.g. council) are unaffected.
+  if [ "$FINAL_ANSWER" = "1" ]; then
+    if [ "$a" = "codex" ] && [ -s "$OUT/$a.lastmsg" ]; then
+      redact <"$OUT/$a.lastmsg" >"$OUT/$a.answer"
+    else
+      cp -f "$OUT/$a.md" "$OUT/$a.answer" 2>/dev/null || : >"$OUT/$a.answer"
+    fi
+  fi
   # Phase 5.1 — durable, structured per-run metadata record: one JSON object per agent next to its
   # transcript, built ONLY from values resolved here (post-fallback model, run mode, target, rc/sec/
   # bytes, fallback flag, launch timestamp) — never the transcript — so the run's resolution is
